@@ -1,0 +1,92 @@
+{{- if .Values.mysql.enabled }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}-mysql
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "darwin.labels" . | nindent 4 }}
+    app.kubernetes.io/component: mysql
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "darwin.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: mysql
+  template:
+    metadata:
+      labels:
+        {{- include "darwin.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: mysql
+    spec:
+      containers:
+        - name: mysql
+          image: mysql:8.0
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              value: {{ .Values.global.database.mysql.rootPassword | quote }}
+            - name: MYSQL_DATABASE
+              value: {{ .Values.global.database.mysql.database | quote }}
+            - name: MYSQL_USER
+              value: {{ .Values.global.database.mysql.username | quote }}
+            - name: MYSQL_PASSWORD
+              value: {{ .Values.global.database.mysql.userPassword | quote }}
+          ports:
+            - name: mysql
+              containerPort: 3306
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+                - mysqladmin
+                - ping
+                - -h
+                - localhost
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          readinessProbe:
+            exec:
+              command:
+                - mysql
+                - -h
+                - localhost
+                - -u
+                - root
+                - -p{{ .Values.global.database.mysql.rootPassword }}
+                - -e
+                - "SELECT 1"
+            initialDelaySeconds: 5
+            periodSeconds: 2
+            timeoutSeconds: 1
+          resources:
+            {{- toYaml .Values.mysql.primary.resources | nindent 12 }}
+          volumeMounts:
+          {{- if .Values.mysql.primary.persistence.enabled }}
+            - name: data
+              mountPath: /var/lib/mysql
+          {{- end }}
+            - name: mysql-init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+            - name: mysql-config
+              mountPath: /etc/mysql/conf.d/custom.cnf
+              subPath: custom.cnf
+      volumes:
+        {{- if .Values.mysql.primary.persistence.enabled }}
+        - name: data
+          {{- if index .Values.global "local-k8s" }}
+          hostPath:
+            path: /mnt/shared-data/mysql-0
+            type: DirectoryOrCreate
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-mysql-pvc
+          {{- end }}
+        {{- end }}
+        - name: mysql-init-scripts
+          configMap:
+            name: {{ .Release.Name }}-mysql-init
+        - name: mysql-config
+          configMap:
+            name: {{ .Release.Name }}-mysql-config
+{{- end }}

@@ -1,0 +1,123 @@
+{{- if .Values.zookeeper.enabled }}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ .Release.Name }}-zookeeper
+  namespace: {{ .Values.global.namespace }}
+  labels:
+    {{- include "darwin.labels" . | nindent 4 }}
+    app.kubernetes.io/component: zookeeper
+spec:
+  serviceName: {{ .Release.Name }}-zookeeper-headless
+  replicas: {{ .Values.zookeeper.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "darwin.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: zookeeper
+  template:
+    metadata:
+      labels:
+        {{- include "darwin.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: zookeeper
+    spec:
+      containers:
+        - name: zookeeper
+          image: zookeeper:3.8
+          env:
+            - name: ZOO_MY_ID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.annotations['statefulset.kubernetes.io/pod-name']
+            - name: ZOO_SERVERS
+              value: "server.1={{ .Release.Name }}-zookeeper-0.{{ .Release.Name }}-zookeeper-headless:2888:3888;2181"
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          ports:
+            - name: client
+              containerPort: 2181
+            - name: server
+              containerPort: 2888
+            - name: leader-election
+              containerPort: 3888
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "zkServer.sh status"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "zkServer.sh status"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.zookeeper.resources | nindent 12 }}
+          {{- if .Values.zookeeper.persistence.enabled }}
+          volumeMounts:
+            - name: data
+              mountPath: /data
+              {{- if index .Values.global "local-k8s" }}
+              subPathExpr: $(POD_NAME)
+              {{- end }}
+            - name: datalog
+              mountPath: /datalog
+              {{- if index .Values.global "local-k8s" }}
+              subPathExpr: $(POD_NAME)
+              {{- end }}
+          {{- end }}
+      {{- if and .Values.zookeeper.persistence.enabled (index .Values.global "local-k8s") }}
+      initContainers:
+        - name: create-data-dirs
+          image: busybox:1.36
+          command: ['sh', '-c', 'mkdir -p /data/$(POD_NAME) /datalog/$(POD_NAME) && chown -R 1000:1000 /data/$(POD_NAME) /datalog/$(POD_NAME)']
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: datalog
+              mountPath: /datalog
+      volumes:
+        - name: data
+          hostPath:
+            path: /mnt/shared-data/zookeeper-data
+            type: DirectoryOrCreate
+        - name: datalog
+          hostPath:
+            path: /mnt/shared-data/zookeeper-datalog
+            type: DirectoryOrCreate
+      {{- end }}
+  {{- if and .Values.zookeeper.persistence.enabled (not (index .Values.global "local-k8s")) }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        {{- if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.zookeeper.persistence.size }}
+    - metadata:
+        name: datalog
+      spec:
+        accessModes: [ "ReadWriteOnce" ]
+        {{- if .Values.global.storageClass }}
+        storageClassName: {{ .Values.global.storageClass }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.zookeeper.persistence.size }}
+  {{- end }}
+{{- end }}

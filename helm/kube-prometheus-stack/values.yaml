@@ -1,0 +1,26 @@
+global:
+  registry: localhost:5000
+
+grafana:
+  image:
+    repository: grafana/grafana
+    tag: latest
+  grafana.ini:
+    security:
+      allow_embedding: true
+    auth.anonymous:
+      enabled: true
+      org_role: Viewer
+  sidecar:
+    datasources:
+      alertmanager:
+        enabled: false
+
+nodeExporter:
+  enabled: false
+
+alertManager:
+  enabled: false
+
+prometheus:
+  enabled: false

@@ -1,0 +1,696 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ .Release.Name }}-datastore-health-check
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/component: datastore-health-check
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ .Release.Name }}-datastore-health-check
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/component: datastore-health-check
+rules:
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["create", "get", "list", "watch", "delete"]
+- apiGroups: [""]
+  resources: ["pods/log"]
+  verbs: ["get"]
+- apiGroups: ["apps"]
+  resources: ["statefulsets"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: [""]
+  resources: ["services"]
+  verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ .Release.Name }}-datastore-health-check
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/component: datastore-health-check
+subjects:
+- kind: ServiceAccount
+  name: {{ .Release.Name }}-datastore-health-check
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+roleRef:
+  kind: Role
+  name: {{ .Release.Name }}-datastore-health-check
+  apiGroup: rbac.authorization.k8s.io
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ .Release.Name }}-datastore-health-check
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+  labels:
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/component: datastore-health-check
+spec:
+  ttlSecondsAfterFinished: 300
+  template:
+    metadata:
+      name: {{ .Release.Name }}-datastore-health-check
+      labels:
+        {{- include "services.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: datastore-health-check
+    spec:
+      serviceAccountName: {{ .Release.Name }}-datastore-health-check
+      restartPolicy: Never
+      initContainers:
+      - name: kubectl-installer
+        image: alpine/k8s:1.28.0
+        command: ['sh', '-c']
+        args:
+          - |
+            # Copy kubectl to shared volume for main container
+            cp /usr/bin/kubectl /shared/kubectl
+            chmod +x /shared/kubectl
+        volumeMounts:
+        - name: shared-tools
+          mountPath: /shared
+      containers:
+      - name: health-checker
+        image: alpine/k8s:1.28.0
+        command: ['sh', '-c']
+        env:
+        # Pre-deploy environment variables (same as pre-deploy.sh)
+        - name: APP_DIR
+          value: "/app"
+        - name: ENV
+          value: "darwin-local"
+        - name: TEAM_SUFFIX
+          value: "-darwin-local"
+        - name: VPC_SUFFIX
+          value: "-darwin-local"
+        - name: DEPLOYMENT_TYPE
+          value: "container"
+        - name: DARWIN_MYSQL_HOST
+          value: "{{ .Release.Name }}-mysql"
+        - name: DARWIN_CASSANDRA_HOST
+          value: "{{ .Release.Name }}-cassandra"
+        - name: DARWIN_MYSQL_USERNAME
+          value: "root"
+        - name: DARWIN_MYSQL_PASSWORD
+          value: "password"
+        - name: DARWIN_KAFKA_HOST
+          value: "{{ .Release.Name }}-kafka"
+        - name: DARWIN_ZOOKEEPER_HOST
+          value: "{{ .Release.Name }}-zookeeper"
+        - name: DARWIN_LOCALSTACK_HOST
+          value: "{{ .Release.Name }}-localstack"
+        - name: DARWIN_ELASTICSEARCH_HOST
+          value: "{{ .Release.Name }}-elasticsearch"
+        {{- if .Values.global.dockerRegistry }}
+        - name: DOCKER_REGISTRY
+          value: "{{ .Values.global.dockerRegistry }}"
+        {{- end }}
+        - name: AWS_ENDPOINT_OVERRIDE
+          value: "http://{{ .Release.Name }}-localstack:4566"
+        - name: COMPUTE_BUCKET_NAME
+          value: "darwin"
+        # Enabled services list (comma-separated serviceName values)
+        - name: ENABLED_SERVICES
+          value: "{{- $services := list -}}{{- range $key, $val := .Values.services -}}{{- if $val.enabled -}}{{- $services = append $services $val.serviceName -}}{{- end -}}{{- end -}}{{- join "," $services -}}"
+        volumeMounts:
+        - name: shared-tools
+          mountPath: /shared
+        args:
+          - |
+            echo "🔍 Darwin Datastore Health Check & Pre-Deploy"
+            echo "=================================================="
+            echo "🔍 Checking datastores are healthy before services start..."
+            echo ""
+            
+            namespace="{{ .Values.global.namespace | default .Release.Namespace }}"
+            
+            # Display enabled services from values.yaml
+            echo "📋 Enabled services (from values.yaml): ${ENABLED_SERVICES:-<all services enabled>}"
+            echo ""
+            
+            # Function to check if a service is enabled in values.yaml
+            is_service_enabled() {
+              local service_name=$1
+              
+              # If ENABLED_SERVICES is empty or not set, consider all services enabled (backward compatibility)
+              if [ -z "$ENABLED_SERVICES" ]; then
+                return 0
+              fi
+              
+              # Check if service_name is in the comma-separated ENABLED_SERVICES list
+              echo ",$ENABLED_SERVICES," | grep -q ",$service_name,"
+              return $?
+            }
+            
+            # Global cleanup function for unexpected exits
+            global_cleanup() {
+              echo ""
+              echo "🚨 Unexpected termination detected, cleaning up pre-deploy pods..."
+              
+              # Clean up any pre-deploy pods that might be left running
+              for pod in $(/shared/kubectl get pods --namespace="$namespace" -o name 2>/dev/null | grep "pre-deploy" || true); do
+                echo "🗑️  Emergency cleanup: Removing $pod"
+                /shared/kubectl delete "$pod" --namespace="$namespace" --ignore-not-found=true --force --grace-period=0
+              done
+              
+              echo "💀 Health check terminated - cleanup completed"
+            }
+            
+            # Set up global cleanup trap
+            trap global_cleanup EXIT INT TERM
+            
+            # Function to check datastore health
+            check_datastore_health() {
+              local service=$1
+              local port=$2
+              local max_attempts=60
+              local attempt=1
+              
+              echo "🔍 Checking $service:$port health..."
+              
+              while [ $attempt -le $max_attempts ]; do
+                if nc -z $service.$namespace.svc.cluster.local $port 2>/dev/null; then
+                  echo "✅ $service is healthy!"
+                  return 0
+                fi
+                echo "⏳ $service not ready yet (attempt $attempt/$max_attempts) - checking again in 5s..."
+                sleep 5
+                attempt=$((attempt + 1))
+              done
+              
+              echo "❌ $service health check failed after $max_attempts attempts"
+              return 1
+            }
+            
+            # Function to check LocalStack HTTP health endpoint
+            check_localstack_health() {
+              local service=$1
+              local port=$2
+              local max_attempts=60
+              local attempt=1
+              
+              echo "🔍 Checking $service:$port HTTP health endpoint..."
+              
+              while [ $attempt -le $max_attempts ]; do
+                # First check if port is open
+                if nc -z $service.$namespace.svc.cluster.local $port 2>/dev/null; then
+                  # Then check HTTP health endpoint  
+                  if wget -q -O - --timeout=5 "http://$service.$namespace.svc.cluster.local:$port/_localstack/health" >/dev/null 2>&1; then
+                    echo "✅ $service HTTP health endpoint is responsive!"
+                    return 0
+                  else
+                    echo "⏳ $service port is open but health endpoint not ready yet (attempt $attempt/$max_attempts)..."
+                  fi
+                else
+                  echo "⏳ $service port not ready yet (attempt $attempt/$max_attempts)..."
+                fi
+                sleep 5
+                attempt=$((attempt + 1))
+              done
+              
+              echo "❌ $service health check failed after $max_attempts attempts"
+              return 1
+            }
+            
+            # Function to check StatefulSet readiness
+            check_statefulset_ready() {
+              local statefulset_name=$1
+              local max_attempts=60
+              local attempt=1
+              
+              echo "🔍 Checking StatefulSet $statefulset_name readiness..."
+              
+              while [ $attempt -le $max_attempts ]; do
+                # Get StatefulSet status
+                local status=$(/shared/kubectl get statefulset "$statefulset_name" --namespace="$namespace" -o jsonpath='{.status.replicas},{.status.readyReplicas}' 2>/dev/null || echo "0,0")
+                local desired_replicas=$(echo "$status" | cut -d',' -f1)
+                local ready_replicas=$(echo "$status" | cut -d',' -f2)
+                
+                # Handle empty values
+                desired_replicas=${desired_replicas:-0}
+                ready_replicas=${ready_replicas:-0}
+                
+                if [ "$desired_replicas" -gt 0 ] && [ "$ready_replicas" -eq "$desired_replicas" ]; then
+                  echo "✅ StatefulSet $statefulset_name is ready! ($ready_replicas/$desired_replicas replicas)"
+                  return 0
+                fi
+                
+                echo "⏳ StatefulSet $statefulset_name not ready yet ($ready_replicas/$desired_replicas replicas) - attempt $attempt/$max_attempts..."
+                sleep 5
+                attempt=$((attempt + 1))
+              done
+              
+              echo "❌ StatefulSet $statefulset_name readiness check failed after $max_attempts attempts"
+              return 1
+            }
+            
+            # Function to check all StatefulSets in namespace
+            check_all_statefulsets() {
+              echo "🔍 Checking all StatefulSets in namespace $namespace..."
+              
+              # Debug: Test kubectl access
+              echo "🔧 Debug: Testing kubectl access..."
+              if ! /shared/kubectl get services --namespace="$namespace" >/dev/null 2>&1; then
+                echo "❌ kubectl access failed - RBAC issue?"
+                return 1
+              fi
+              echo "✅ kubectl access verified"
+              
+              # Debug: Check StatefulSets with more detail
+              echo "🔧 Debug: Attempting to list StatefulSets..."
+              local statefulsets=$(/shared/kubectl get statefulsets --namespace="$namespace" -o name 2>&1)
+              local kubectl_exit_code=$?
+              
+              echo "📋 kubectl output: $statefulsets"
+              echo "📋 kubectl exit code: $kubectl_exit_code"
+              
+              if [ $kubectl_exit_code -ne 0 ]; then
+                echo "❌ Failed to list StatefulSets (exit code: $kubectl_exit_code)"
+                echo "📋 Error output: $statefulsets"
+                return 1
+              fi
+              
+              if [ -z "$statefulsets" ]; then
+                echo "ℹ️  No StatefulSets found in namespace $namespace"
+                # Let's also try listing all resources to see what's available
+                echo "🔧 Debug: Listing all resources in namespace..."
+                /shared/kubectl get all --namespace="$namespace" | head -10
+                return 0
+              fi
+              
+              local failed=0
+              for sts in $statefulsets; do
+                local sts_name=$(echo "$sts" | sed 's|statefulset.apps/||')
+                if ! check_statefulset_ready "$sts_name"; then
+                  failed=1
+                fi
+              done
+              
+              if [ $failed -eq 0 ]; then
+                echo "✅ All StatefulSets are ready!"
+                return 0
+              else
+                echo "❌ Some StatefulSets are not ready"
+                return 1
+              fi
+            }
+            
+            # Function to cleanup pre-deploy pods
+            cleanup_pre_deploy_pod() {
+              local app_name=$1
+              local pod_name="$app_name-pre-deploy"
+              
+              echo "🧹 Cleaning up pre-deploy pod: $pod_name"
+              /shared/kubectl delete pod "$pod_name" --namespace="$namespace" --ignore-not-found=true --force --grace-period=0
+              
+              # Wait a moment to ensure cleanup
+              sleep 2
+              
+              # Double-check cleanup
+              if /shared/kubectl get pod "$pod_name" --namespace="$namespace" >/dev/null 2>&1; then
+                echo "⚠️  Warning: Pod $pod_name still exists after cleanup attempt"
+              else
+                echo "✅ Successfully cleaned up pod: $pod_name"
+              fi
+            }
+
+            # Function to run pre-deploy for an application (similar to pre-deploy.sh)
+            run_application_pre_deploy() {
+              local service_name=$1
+              local component_name=$2
+              local image=$3
+              shift 3
+              local pod_name="$service_name-pre-deploy"
+              
+              echo "🚀 Running pre-deploy for $component_name (service: $service_name)..."
+              
+              # Clean up any existing pre-deploy pod first
+              cleanup_pre_deploy_pod "$service_name"
+              
+              # Build environment variables JSON
+              local env_json=""
+              env_json="$env_json{\"name\":\"APP_DIR\",\"value\":\"$APP_DIR\"},"
+              env_json="$env_json{\"name\":\"ENV\",\"value\":\"$ENV\"},"
+              env_json="$env_json{\"name\":\"TEAM_SUFFIX\",\"value\":\"$TEAM_SUFFIX\"},"
+              env_json="$env_json{\"name\":\"VPC_SUFFIX\",\"value\":\"$VPC_SUFFIX\"},"
+              env_json="$env_json{\"name\":\"DEPLOYMENT_TYPE\",\"value\":\"$DEPLOYMENT_TYPE\"},"
+              env_json="$env_json{\"name\":\"DARWIN_MYSQL_HOST\",\"value\":\"$DARWIN_MYSQL_HOST\"},"
+              env_json="$env_json{\"name\":\"DARWIN_CASSANDRA_HOST\",\"value\":\"$DARWIN_CASSANDRA_HOST\"},"
+              env_json="$env_json{\"name\":\"DARWIN_MYSQL_USERNAME\",\"value\":\"$DARWIN_MYSQL_USERNAME\"},"
+              env_json="$env_json{\"name\":\"DARWIN_MYSQL_PASSWORD\",\"value\":\"$DARWIN_MYSQL_PASSWORD\"},"
+              env_json="$env_json{\"name\":\"DARWIN_KAFKA_HOST\",\"value\":\"$DARWIN_KAFKA_HOST\"},"
+              env_json="$env_json{\"name\":\"DARWIN_ZOOKEEPER_HOST\",\"value\":\"$DARWIN_ZOOKEEPER_HOST\"},"
+              env_json="$env_json{\"name\":\"DARWIN_ELASTICSEARCH_HOST\",\"value\":\"$DARWIN_ELASTICSEARCH_HOST\"},"
+              env_json="$env_json{\"name\":\"SERVICE_NAME\",\"value\":\"$component_name\"},"
+              env_json="$env_json{\"name\":\"AWS_ENDPOINT_OVERRIDE\",\"value\":\"$AWS_ENDPOINT_OVERRIDE\"},"
+              env_json="$env_json{\"name\":\"COMPUTE_BUCKET_NAME\",\"value\":\"$COMPUTE_BUCKET_NAME\"}"
+              
+              # Add extra environment variables
+              for kv in "$@"; do
+                key=${kv%%=*}
+                val=${kv#*=}
+                env_json="$env_json,{\"name\":\"$key\",\"value\":\"$val\"}"
+              done
+              
+              # Remove trailing comma and wrap in array
+              env_json="[${env_json}]"
+              
+              # Run pre-deploy pod
+              /shared/kubectl run "$service_name-pre-deploy" \
+                --namespace="$namespace" \
+                --image="$image" \
+                --restart=Never \
+                --image-pull-policy=Always \
+                --overrides="{
+                  \"spec\": {
+                    \"containers\": [{
+                      \"name\": \"$service_name-pre-deploy\",
+                      \"image\": \"$image\",
+                      \"imagePullPolicy\": \"Always\",
+                      \"command\": [\"bash\", \"-c\", \".odin/pre-deploy.sh\"],
+                      \"env\": $env_json
+                    }]
+                  }
+                }"
+              
+              # Note: We use explicit cleanup calls instead of traps to avoid variable scope issues
+              
+              if [ $? -eq 0 ]; then
+                echo "✅ Pre-deploy pod created for $component_name, waiting for completion..."
+                
+                # Wait for pod to complete with timeout
+                echo "⏳ Waiting for pre-deploy pod to complete..."
+                local timeout=300  # 5 minutes timeout
+                local elapsed=0
+                local interval=5
+                
+                while true; do
+                  phase=$(/shared/kubectl get pod "$pod_name" --namespace="$namespace" -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+                  
+                  if [ "$phase" = "Succeeded" ] || [ "$phase" = "Failed" ]; then
+                    break
+                  fi
+                  
+                  if [ "$phase" = "NotFound" ]; then
+                    echo "❌ Pre-deploy pod not found"
+                    cleanup_pre_deploy_pod "$service_name"
+                    return 1
+                  fi
+                  
+                  # Check timeout
+                  elapsed=$((elapsed + interval))
+                  if [ $elapsed -ge $timeout ]; then
+                    echo "❌ Pre-deploy pod timed out after ${timeout}s (status: $phase)"
+                    cleanup_pre_deploy_pod "$service_name"
+                    return 1
+                  fi
+                  
+                  echo "⏳ Pod status: $phase, waiting... (${elapsed}s/${timeout}s)"
+                  sleep $interval
+                done
+                
+                # Get final pod status
+                status=$(/shared/kubectl get pod "$pod_name" --namespace="$namespace" -o jsonpath='{.status.phase}')
+                
+                if [ "$status" = "Succeeded" ]; then
+                  echo "✅ Pre-deploy completed successfully for $component_name"
+                  # Show logs (limited output)
+                  echo "📋 Pre-deploy logs for $component_name (last 20 lines):"
+                  /shared/kubectl logs "$pod_name" --namespace="$namespace" --tail=20
+                  
+                  # Clean up the pod
+                  cleanup_pre_deploy_pod "$service_name"
+                  return 0
+                else
+                  echo "❌ Pre-deploy failed for $component_name (status: $status)"
+                  echo "📋 Pre-deploy logs for $component_name:"
+                  /shared/kubectl logs "$pod_name" --namespace="$namespace"
+                  
+                  # Clean up the pod before returning failure
+                  cleanup_pre_deploy_pod "$service_name"
+                  return 1
+                fi
+              else
+                echo "❌ Failed to create pre-deploy pod for $component_name"
+                # Ensure cleanup even if pod creation failed
+                cleanup_pre_deploy_pod "$service_name"
+                return 1
+              fi
+            }
+            
+            echo "📊 Step 1: Checking all datastore services..."
+            echo ""
+            
+            # Dynamically discover datastore services
+            echo "🔍 Discovering datastore services with label: darwin-component-type=datastore"
+            
+            datastore_services=$(/shared/kubectl get services -l "darwin-component-type=datastore" --namespace="$namespace" -o name 2>/dev/null || echo "")
+            
+            if [ -z "$datastore_services" ]; then
+              echo "⚠️  No services with label 'darwin-component-type=datastore' found, falling back to known services"
+              # Fallback to hardcoded services
+            check_datastore_health "{{ .Release.Name }}-mysql" 3306 || exit 1
+            check_datastore_health "{{ .Release.Name }}-cassandra" 9042 || exit 1
+            check_datastore_health "{{ .Release.Name }}-kafka" 9092 || exit 1
+            check_localstack_health "{{ .Release.Name }}-localstack" 4566 || exit 1
+            # Check Elasticsearch if enabled in datastores
+            if /shared/kubectl get service "{{ .Release.Name }}-elasticsearch" --namespace="$namespace" >/dev/null 2>&1; then
+              check_datastore_health "{{ .Release.Name }}-elasticsearch" 9200 || exit 1
+            fi
+            # Check Airflow if enabled in datastores
+            if /shared/kubectl get service "{{ .Release.Name }}-airflow" --namespace="$namespace" >/dev/null 2>&1; then
+              check_datastore_health "{{ .Release.Name }}-airflow" 8080 || exit 1
+            fi
+            else
+              echo "📋 Found labeled datastore services:"
+              echo "$datastore_services" | while read service_name; do
+                service_name=$(echo "$service_name" | sed 's|service/||')
+                
+                # Get the primary port for this service
+                port=$(/shared/kubectl get service "$service_name" --namespace="$namespace" -o jsonpath='{.spec.ports[0].port}' 2>/dev/null || echo "")
+                
+                if [ -n "$port" ]; then
+                  echo "🔍 Found datastore service: $service_name:$port"
+                  check_datastore_health "$service_name" "$port" || exit 1
+                else
+                  echo "⚠️  Skipping $service_name - no port found"
+                fi
+              done
+            fi
+            
+            echo ""
+            echo "🎉 All datastore services are healthy!"
+            echo ""
+            
+            # Check StatefulSet readiness
+            echo "📊 Step 1.5: Verifying StatefulSet readiness..."
+            echo ""
+            check_all_statefulsets || exit 1
+            
+            echo ""
+            echo "🎉 All StatefulSets are ready!"
+            echo ""
+            echo "📊 Step 2: Running pre-deploy for applications..."
+            echo ""
+            
+            # Function to discover service images dynamically
+            discover_service_images() {
+              echo "🔍 Discovering services for pre-deploy with label: darwin-component-type=service"
+              
+              # Find services specifically labeled as application services
+              application_services=$(/shared/kubectl get services -l "darwin-component-type=service" --namespace="$namespace" -o name 2>/dev/null || echo "")
+              
+              if [ -z "$application_services" ]; then
+                echo "⚠️  No services with label 'darwin-component-type=service' found for pre-deploy"
+                echo "📋 Falling back to hardcoded applications..."
+                
+                # Fallback to known applications
+                DOCKER_REGISTRY="${DOCKER_REGISTRY:-localhost:5000}"
+                
+                applications="darwin-ofs-v2 darwin-ofs-v2-admin darwin-ofs-v2-consumer"
+                local processed=0
+                local failed=0
+                
+                for app in $applications; do
+                  # Check if service is enabled in values.yaml
+                  if ! is_service_enabled "$app"; then
+                    echo "⏭️  Skipping $app - disabled in values.yaml (enabled: false)"
+                    continue
+                  fi
+                  
+                  echo "✅ Service $app is enabled in values.yaml, proceeding with pre-deploy"
+                  
+                  image="$DOCKER_REGISTRY/$app:latest"
+                  extra_envs="VAULT_SERVICE_MYSQL_USERNAME=dummy VAULT_SERVICE_MYSQL_PASSWORD=dummy DARWIN_FEATURE_STORE_HOST=darwin-feature-store DARWIN_FEATURE_STORE_ADMIN_HOST=darwin-feature-store-admin"
+                  
+                  echo ">>> Running pre deploy for $app with image $image (fallback)"
+                  eval "set -- $extra_envs"
+                  run_application_pre_deploy "$app" "$app" "$image" "$@"
+                  
+                  if [ $? -eq 0 ]; then
+                    echo ">>> Completed processing $app"
+                    processed=$((processed + 1))
+                  else
+                    echo ">>> Failed processing $app"
+                    failed=1
+                    return 1
+                  fi
+                done
+                
+                if [ $processed -eq 0 ]; then
+                  echo "ℹ️  No fallback applications found to deploy"
+                else
+                  echo "🏁 Processed $processed fallback application(s) successfully"
+                fi
+                return 0
+              fi
+              
+              local found_services=0
+              local failed=0
+              echo "📋 Found labeled application services:"
+              
+              # Convert services to a space-separated list to avoid subshell issues
+              service_list=$(echo "$application_services" | sed 's|service/||g' | tr '\n' ' ')
+              
+              # Process each labeled service to find backing deployments
+              for service_name in $service_list; do
+                echo "🔍 Processing application service: $service_name"
+                
+                # Check if service is enabled in values.yaml
+                if ! is_service_enabled "$service_name"; then
+                  echo "⏭️  Skipping $service_name - disabled in values.yaml (enabled: false)"
+                  continue
+                fi
+                
+                echo "✅ Service $service_name is enabled in values.yaml"
+                
+                # Try to find corresponding deployment
+                deployment=$(/shared/kubectl get deployment "$service_name" --namespace="$namespace" -o name 2>/dev/null || echo "")
+                if [ -n "$deployment" ]; then
+                  # Extract image from deployment
+                  image=$(/shared/kubectl get deployment "$service_name" --namespace="$namespace" -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || echo "")
+                  # Extract component-name from service labels
+                  component_name=$(/shared/kubectl get service "$service_name" --namespace="$namespace" -o jsonpath='{.metadata.labels.component-name}' 2>/dev/null || echo "$service_name")
+                  if [ -n "$image" ]; then
+                    echo "📦 Found deployment $service_name with image: $image, component-name: $component_name"
+                    
+                    # Extract environment variables from deployment
+                    echo "🔍 Extracting environment variables from deployment..."
+                    
+                    # Build extra_envs string from deployment env vars
+                    extra_envs=""
+                    
+                    # Get the number of env vars in the deployment
+                    env_count=$(/shared/kubectl get deployment "$service_name" --namespace="$namespace" -o jsonpath='{.spec.template.spec.containers[0].env[*].name}' 2>/dev/null | wc -w || echo "0")
+                    
+                    if [ "$env_count" -gt 0 ]; then
+                      # Extract env vars one by one using index-based jsonpath
+                      i=0
+                      while [ $i -lt $env_count ]; do
+                        env_name=$(/shared/kubectl get deployment "$service_name" --namespace="$namespace" -o jsonpath="{.spec.template.spec.containers[0].env[$i].name}" 2>/dev/null || echo "")
+                        env_value=$(/shared/kubectl get deployment "$service_name" --namespace="$namespace" -o jsonpath="{.spec.template.spec.containers[0].env[$i].value}" 2>/dev/null || echo "")
+                        
+                        if [ -n "$env_name" ] && [ -n "$env_value" ]; then
+                          # Skip base environment variables that are already set by run_application_pre_deploy
+                          case "$env_name" in
+                            APP_DIR|ENV|TEAM_SUFFIX|VPC_SUFFIX|DEPLOYMENT_TYPE|DARWIN_MYSQL_HOST|DARWIN_CASSANDRA_HOST|DARWIN_MYSQL_USERNAME|DARWIN_MYSQL_PASSWORD|DARWIN_KAFKA_HOST|DARWIN_ZOOKEEPER_HOST|SERVICE_NAME|DARWIN_FEATURE_STORE_HOST|DARWIN_FEATURE_STORE_ADMIN_HOST|AWS_ENDPOINT_OVERRIDE)
+                              ;;
+                            *)
+                              # Escape special characters in value for shell safety
+                              env_value=$(printf '%s\n' "$env_value" | sed "s/'/'\\\\''/g")
+                              extra_envs="$extra_envs $env_name=$env_value"
+                              ;;
+                          esac
+                        fi
+                        i=$((i + 1))
+                      done
+                    fi
+                    
+                    # Add default fallback env vars if not already set
+                    if [ -z "$extra_envs" ]; then
+                      extra_envs="VAULT_SERVICE_MYSQL_USERNAME=dummy VAULT_SERVICE_MYSQL_PASSWORD=dummy DARWIN_FEATURE_STORE_HOST=darwin-feature-store DARWIN_FEATURE_STORE_ADMIN_HOST=darwin-feature-store-admin"
+                    fi
+                    
+                    echo ">>> Running pre deploy for $component_name with image $image"
+                    echo ">>> Environment variables: $extra_envs"
+                    eval "set -- $extra_envs"
+                    run_application_pre_deploy "$service_name" "$component_name" "$image" "$@"
+                    
+                    if [ $? -eq 0 ]; then
+                      echo ">>> Completed processing $service_name"
+                      found_services=$((found_services + 1))
+                    else
+                      echo ">>> Failed processing $service_name"
+                      failed=1
+                    fi
+                  else
+                    echo "⚠️  Skipping $service_name - no image found in deployment"
+                  fi
+                else
+                  echo "⚠️  Skipping $service_name - no deployment found"
+                fi
+                
+                
+                # Exit early if any pre-deploy failed
+                if [ $failed -eq 1 ]; then
+                  echo "❌ Pre-deploy failed - stopping execution"
+                  return 1
+                fi
+              done
+              
+              if [ $failed -eq 1 ]; then
+                echo "❌ Some pre-deploy operations failed"
+                return 1
+              fi
+              
+              echo "🏁 Processed $found_services labeled application services successfully"
+              return 0
+            }
+            
+            # Run dynamic service discovery and pre-deploy
+            discover_service_images
+            if [ $? -ne 0 ]; then
+              echo "❌ Pre-deploy phase failed - health check cannot continue"
+              exit 1
+            fi
+            
+            # Wait 10 seconds after pre-deploy completion
+            echo ""
+            echo "⏳ Waiting 10 seconds after pre-deploy completion..."
+            sleep 10
+            echo "✅ Wait completed - proceeding with cleanup"
+            
+            # Final cleanup: Remove any remaining pre-deploy pods
+            echo ""
+            echo "🧹 Final cleanup: Removing any remaining pre-deploy pods..."
+            /shared/kubectl delete pods -l "run" --field-selector="metadata.name" --namespace="$namespace" --ignore-not-found=true 2>/dev/null || true
+            
+            # Specifically clean up our pre-deploy pods by pattern
+            for pod in $(/shared/kubectl get pods --namespace="$namespace" -o name 2>/dev/null | grep "pre-deploy" || true); do
+              echo "🗑️  Removing leftover pod: $pod"
+              /shared/kubectl delete "$pod" --namespace="$namespace" --ignore-not-found=true --force --grace-period=0
+            done
+            
+            echo ""
+            echo "🎉 All pre-deploy tasks completed successfully!"
+            echo "✅ Datastore health check, StatefulSet readiness, and pre-deploy completed"
+            echo "📊 Summary:"
+            echo "   ✅ All datastore services are healthy"
+            echo "   ✅ All StatefulSets have desired replica count ready"
+            echo "   ✅ All application pre-deploy tasks completed"
+            echo "🚀 Platform is ready - services can now start safely!"
+      volumes:
+      - name: shared-tools
+        emptyDir: {}

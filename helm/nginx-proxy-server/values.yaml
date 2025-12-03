@@ -111,7 +111,7 @@ ingress:
     hosts:
       - host: localhost
         paths:
-          - path: "/kind-0(/|$)(.*)"
+          - path: "/eks-0(/|$)(.*)"
             pathType: ImplementationSpecific
 
   external:

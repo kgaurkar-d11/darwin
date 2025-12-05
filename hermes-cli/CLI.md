@@ -158,7 +158,7 @@ If you are using the following CLI commands inside a project created by the CLI 
 - **Description**: One-click deploy serve with model. Combines serve creation, configuration, and deployment in a single command.
 - **Usage**:
   ```bash
-  hermes deploy-model --serve-name <name> --model-uri <uri> --cores <cores> --memory <memory> --node-capacity <capacity> --min-replicas <min> --max-replicas <max>
+  hermes deploy-model --serve-name <name> --artifact-version <version> --model-uri <uri> --cores <cores> --memory <memory> --node-capacity <capacity> --min-replicas <min> --max-replicas <max>
   ```
 - **Options**:
   - `--serve_name`: Name of the serve. **Required**

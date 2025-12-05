@@ -32,6 +32,7 @@ class CreateEnvironmentRequest:
 class DeployModelRequest:
     env: str
     serve_name: str
+    artifact_version: str
     model_uri: str
     cores: int
     memory: int

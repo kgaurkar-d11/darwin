@@ -248,8 +248,17 @@ class EnvironmentRequest(BaseModel):
 
 
 class ModelDeploymentRequest(BaseModel):
-    serve_name: str = Field(
-        ..., min_length=1, max_length=16, description="Name of the serve (1–16 characters)."
+    serve_name: Optional[str] = Field(
+        None,
+        min_length=1,
+        max_length=50,
+        description="Optional serve name. When omitted, a default one-click serve will be created.",
+    )
+    artifact_version: str = Field(
+        ...,
+        min_length=1,
+        max_length=50,
+        description="Version label for the one-click artifact (1–50 characters).",
     )
     model_uri: str = Field(
         ..., min_length=1, description="URI of the model."
@@ -272,7 +281,7 @@ class ModelDeploymentRequest(BaseModel):
             raise ValueError("min_replicas cannot be greater than max_replicas")
         return self
 
-    @field_validator("serve_name", "model_uri", mode="before")
+    @field_validator("serve_name", "model_uri", "artifact_version", mode="before")
     def strip_whitespace(cls, value):
         if isinstance(value, str):
             return value.strip()

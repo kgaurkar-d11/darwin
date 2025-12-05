@@ -237,11 +237,13 @@ The one-click deployment:
 2. Passes the MLflow model URI as an environment variable
 3. The runtime fetches and loads the model at startup
 4. Deploys to the kind cluster via Darwin Cluster Manager
+Deploy MLflow models directly while auto-creating the necessary serve/artifact metadata:
 
 ```bash
 POST /api/v1/serve/deploy-model
 {
-  "serve_name": "my-model",
+  "serve_name": "existing-serve-name",   # Optional; auto-generated if omitted
+  "artifact_version": "v1",
   "model_uri": "mlflow-artifacts:/45/abc123.../artifacts/model",
   "env": "local",
   "cores": 4,
@@ -264,7 +266,10 @@ POST /api/v1/serve/deploy-model
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-**Note:** The `env` field must reference an existing environment created via the environment API.
+**Notes:**
+- `env` must reference an existing environment created via the environment API.
+- `serve_name` is optional; if it is omitted, ML Serve will create (or reuse) a `<user>-one-click-deployments` serve automatically.
+- `artifact_version` is required so each one-click deployment can be tracked like a standard artifact/serve deployment.
 
 ### One-Click Model Undeploy
 

@@ -158,6 +158,7 @@ class HermesDeployer:
         self,
         env: str,
         serve_name: str,
+        artifact_version: str,
         model_uri: str,
         cores: int,
         memory: int,
@@ -171,6 +172,7 @@ class HermesDeployer:
             required_fields = {
                 "env": env,
                 "serve_name": serve_name,
+                "artifact_version": artifact_version,
                 "model_uri": model_uri,
                 "cores": cores,
                 "memory": memory,
@@ -190,6 +192,7 @@ class HermesDeployer:
             request = DeployModelRequest(
                 env=env,
                 serve_name=serve_name,
+                artifact_version=artifact_version,
                 model_uri=model_uri,
                 cores=cores,
                 memory=memory,

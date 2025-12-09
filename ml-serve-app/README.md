@@ -269,7 +269,7 @@ POST /api/v1/serve/deploy-model
 **Notes:**
 - `env` must reference an existing environment created via the environment API.
 - `serve_name` is optional; if it is omitted, ML Serve will create (or reuse) a `<user>-one-click-deployments` serve automatically.
-- `artifact_version` is required so each one-click deployment can be tracked like a standard artifact/serve deployment.
+- `artifact_version` is required so each one-click deployment can be tracked like a standard artifact/serve deployment. It is a deployment label for the one-click serve (not the underlying runtime image tag).
 
 ### One-Click Model Undeploy
 
@@ -279,6 +279,7 @@ Stop and remove a model that was deployed via the one-click deployment API:
 POST /api/v1/serve/undeploy-model
 {
   "serve_name": "my-model",
+  "artifact_version": "v1",
   "env": "local"
 }
 ```

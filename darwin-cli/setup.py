@@ -47,6 +47,12 @@ def prepare_package():
     if not os.path.exists(dest_dir5):
         shutil.copytree(src_dir5, dest_dir5)
         dest_dirs.append(dest_dir5)
+
+    dest_dir6 = "darwin_mlflow"
+    src_dir6 = "../mlflow/sdk/darwin_mlflow"
+    if not os.path.exists(dest_dir6):
+        shutil.copytree(src_dir6, dest_dir6)
+        dest_dirs.append(dest_dir6)
     return dest_dirs
 
 
@@ -77,6 +83,7 @@ if __name__ == "__main__":
                 "darwin_workspace*",
                 "workspace_model*",
                 "hermes*",
+                "darwin_mlflow*",
             ]
         ),
         package_dir={
@@ -85,6 +92,7 @@ if __name__ == "__main__":
             "darwin_workspace": "darwin_workspace",
             "workspace_model": "workspace_model",
             "hermes": "hermes",
+            "darwin_mlflow": "darwin_mlflow",
         },
     python_requires=">=3.9.7",
     install_requires=[
@@ -101,7 +109,8 @@ if __name__ == "__main__":
         "binaryornot==0.4.4",
         "Jinja2==3.1.5",
         "questionary>=1.13.0",
-        "aiohttp >= 3.8.0"
+        "aiohttp >= 3.8.0",
+        "mlflow>=2.12.0",
     ],
     extras_require={
         "dev": [

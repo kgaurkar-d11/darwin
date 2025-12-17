@@ -9,6 +9,7 @@ from ml_serve_app_layer.dtos.requests import DeploymentRequest, APIServeDeployme
     WorkflowServeDeploymentConfigRequest, ModelDeploymentRequest, ModelUndeployRequest
 from ml_serve_core.client.darwin_workflow_client import DarwinWorkflowClient
 from ml_serve_core.client.dcm_client import DCMClient
+from ml_serve_core.client.mlflow_client import MLflowClient
 from ml_serve_core.constants.constants import (
     FASTAPI_SERVE_RESOURCE_NAME,
     FASTAPI_SERVE_CHART_VERSION,
@@ -39,6 +40,7 @@ class DeploymentService:
         self.dcm_client = DCMClient()
         self.serve_config_service = ServeConfigService()
         self.workflow_client = DarwinWorkflowClient()
+        self.mlflow_client = MLflowClient()
 
     @staticmethod
     def _sanitize_identifier(value: str) -> str:
@@ -511,6 +513,19 @@ class DeploymentService:
         )
 
     async def deploy_model(self, request: ModelDeploymentRequest, user: User):
+        # Validate model URI exists in MLflow before proceeding
+        is_valid, error_msg = await self.mlflow_client.validate_model_uri(request.model_uri)
+        if not is_valid:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Invalid model URI",
+                    "error": error_msg,
+                    "hint": "Please verify the model exists in MLflow and the URI is correct."
+                }
+            )
+
+        # Get environment from database
         env = await Environment.get_or_none(name=request.env)
         if not env:
             raise HTTPException(

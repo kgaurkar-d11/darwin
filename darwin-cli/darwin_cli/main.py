@@ -1,7 +1,7 @@
 import sys
 import typer
 from loguru import logger
-from darwin_cli.commands import compute, config, workspace, serve, mlflow, feature_store
+from darwin_cli.commands import compute, config, workspace, serve, mlflow, feature_store, catalog
 
 
 app = typer.Typer(
@@ -17,6 +17,7 @@ app.add_typer(workspace.app, name="workspace", help="Workspace projects and code
 app.add_typer(serve.app, name="serve", help="Serve (Hermes) commands")
 app.add_typer(mlflow.app, name="mlflow", help="MLflow experiment tracking and model registry")
 app.add_typer(feature_store.app, name="feature-store", help="Feature store operations")
+app.add_typer(catalog.app, name="catalog", help="Data asset discovery and lineage")
 
 
 def main():

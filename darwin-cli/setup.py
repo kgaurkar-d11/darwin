@@ -59,6 +59,13 @@ def prepare_package():
     if not os.path.exists(dest_dir7):
         shutil.copytree(src_dir7, dest_dir7)
         dest_dirs.append(dest_dir7)
+
+    dest_dir8 = "darwin_catalog"
+    src_dir8 = "../darwin-catalog/sdk/darwin_catalog"
+    if not os.path.exists(dest_dir8):
+        shutil.copytree(src_dir8, dest_dir8)
+        dest_dirs.append(dest_dir8)
+
     return dest_dirs
 
 
@@ -91,6 +98,7 @@ if __name__ == "__main__":
                 "hermes*",
                 "darwin_mlflow*",
                 "darwin_fs*",
+                "darwin_catalog*",
             ]
         ),
         package_dir={
@@ -101,6 +109,7 @@ if __name__ == "__main__":
             "hermes": "hermes",
             "darwin_mlflow": "darwin_mlflow",
             "darwin_fs": "darwin_fs",
+            "darwin_catalog": "darwin_catalog",
         },
     python_requires=">=3.9.7",
     install_requires=[
@@ -143,6 +152,7 @@ if __name__ == "__main__":
             "workspace_model": ["py.typed"],
             "hermes": ["src/templates/*", "src/templates/**"],
             "darwin_fs": ["py.typed"],
+            "darwin_catalog": ["py.typed"],
         },
     zip_safe=False,
     classifiers=[

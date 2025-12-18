@@ -53,6 +53,12 @@ def prepare_package():
     if not os.path.exists(dest_dir6):
         shutil.copytree(src_dir6, dest_dir6)
         dest_dirs.append(dest_dir6)
+
+    dest_dir7 = "darwin_fs"
+    src_dir7 = "../feature-store/python/darwin_fs/darwin_fs"
+    if not os.path.exists(dest_dir7):
+        shutil.copytree(src_dir7, dest_dir7)
+        dest_dirs.append(dest_dir7)
     return dest_dirs
 
 
@@ -84,6 +90,7 @@ if __name__ == "__main__":
                 "workspace_model*",
                 "hermes*",
                 "darwin_mlflow*",
+                "darwin_fs*",
             ]
         ),
         package_dir={
@@ -93,6 +100,7 @@ if __name__ == "__main__":
             "workspace_model": "workspace_model",
             "hermes": "hermes",
             "darwin_mlflow": "darwin_mlflow",
+            "darwin_fs": "darwin_fs",
         },
     python_requires=">=3.9.7",
     install_requires=[
@@ -134,6 +142,7 @@ if __name__ == "__main__":
             "darwin_workspace": ["py.typed"],
             "workspace_model": ["py.typed"],
             "hermes": ["src/templates/*", "src/templates/**"],
+            "darwin_fs": ["py.typed"],
         },
     zip_safe=False,
     classifiers=[

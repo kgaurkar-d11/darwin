@@ -148,3 +148,22 @@ def build_compute_definition_inline(
 def str_to_list(value: str) -> list[str]:
     """Convert a comma-separated string into a list of non-empty, trimmed values."""
     return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def to_dict(obj):
+    """Convert object to dict if it has a to_dict method, otherwise return as-is."""
+    return obj.to_dict() if hasattr(obj, 'to_dict') else obj
+
+
+def load_yaml_file(file_path: str) -> dict:
+    """Load and parse a YAML file."""
+    import yaml
+    try:
+        with open(file_path, "r") as f:
+            return yaml.safe_load(f) or {}
+    except FileNotFoundError:
+        logger.error("File not found: {}", file_path)
+        raise typer.Exit(1)
+    except yaml.YAMLError as e:
+        logger.error("Error parsing YAML file {}: {}", file_path, e)
+        raise typer.Exit(1)

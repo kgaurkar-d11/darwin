@@ -1,0 +1,9 @@
+# Entity update configuration
+# Used with: darwin-cli feature-store entity update --name <entity_name> --file
+owner: updated-owner@example.com
+tags:
+  - user
+  - demographics
+  - updated
+description: Updated entity description
+

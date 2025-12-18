@@ -398,14 +398,12 @@ def serve_deploy_model(
 def serve_undeploy_model(
     serve_name: str = typer.Option(..., "--serve-name", help="Name of the serve to undeploy"),
     env: str = typer.Option(..., "--env", help="Environment"),
-    artifact_version: str = typer.Option(..., help="Version label for the one-click artifact"),
 ):
     """Undeploy one-click model."""
     try:
         asyncio.run(
             get_deployer(ENV).undeploy_model(
                 serve_name=serve_name,
-                artifact_version=artifact_version,
                 env=env,
             )
         )

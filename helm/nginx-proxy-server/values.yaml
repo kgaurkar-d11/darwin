@@ -105,13 +105,13 @@ ingress:
   enabled: true
   internal:
     enabled: true
-    ingressClassName: nginx 
+    ingressClassName: nginx
     annotations:
       nginx.ingress.kubernetes.io/backend-protocol: "HTTP"
     hosts:
       - host: localhost
         paths:
-          - path: "/eks-0(/|$)(.*)"
+          - path: "/kind-0(/|$)(.*)"
             pathType: ImplementationSpecific
 
   external:

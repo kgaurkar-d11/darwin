@@ -6,12 +6,13 @@ import (
 	"compute/cluster_manager/utils/rest_errors"
 	"context"
 	"fmt"
-	"go.uber.org/zap"
-	"helm.sh/helm/v3/pkg/chart"
-	"helm.sh/helm/v3/pkg/chartutil"
 	"os"
 	"strings"
 	"time"
+
+	"go.uber.org/zap"
+	"helm.sh/helm/v3/pkg/chart"
+	"helm.sh/helm/v3/pkg/chartutil"
 
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart/loader"
@@ -21,6 +22,21 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 )
+
+// getEffectiveKubeConfigPath returns the kubeconfig path to use.
+// If running in-cluster (ServiceAccount token exists), returns empty string to use in-cluster config.
+// Otherwise, returns the provided kubeConfigPath for out-of-cluster access.
+func getEffectiveKubeConfigPath(kubeConfigPath string) string {
+	// Check if ServiceAccount token exists (indicates in-cluster execution)
+	if _, err := os.Stat("/var/run/secrets/kubernetes.io/serviceaccount/token"); err == nil {
+		logger.Info("Detected in-cluster execution, using ServiceAccount authentication")
+		return "" // Empty string tells client-go to use in-cluster config
+	}
+
+	// Running outside cluster, use provided kubeconfig
+	logger.Info("Using out-of-cluster kubeconfig", zap.String("path", kubeConfigPath))
+	return kubeConfigPath
+}
 
 // PackHelm TODO get the chart from s3 or other source
 func PackHelm(chartPath string, valsPath string, destinationPath string) (string, rest_errors.RestErr) {
@@ -91,8 +107,12 @@ func InstallorUpgradeHelmChart(kubeConfigPath string, chartPath string, releaseN
 		return nil, restError
 	}
 	releaseNamespace := namespace
+
+	// Use in-cluster config if running in Kubernetes, otherwise use provided kubeconfig
+	effectiveKubeConfigPath := getEffectiveKubeConfigPath(kubeConfigPath)
+
 	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(kube.GetConfig(kubeConfigPath, "", releaseNamespace), releaseNamespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
+	if err := actionConfig.Init(kube.GetConfig(effectiveKubeConfigPath, "", releaseNamespace), releaseNamespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
 		_ = fmt.Sprintf(format, v)
 	}); err != nil {
 		logger.Error("Error initiating the action config", zap.Error(err))
@@ -159,7 +179,7 @@ func InstallorUpgradeHelmChartWithRetries(kubeConfigPath string, chartPath strin
 			}
 			return nil, nil
 		}
-        // TODO - to load test on high number of clusters, services and remove the time.sleep
+		// TODO - to load test on high number of clusters, services and remove the time.sleep
 		time.Sleep(1 * time.Second) // Wait before deleting the release and retrying
 		logger.Info("Deleting old Helm release to retry installation again that failed due to error", zap.String("release", releaseName), zap.String("namespace", namespace), zap.Error(err))
 		_, err := DeleteHelmRelease(kubeConfigPath, releaseName, namespace)
@@ -185,8 +205,12 @@ func InstallorUpgradeHelmChartWithRetries(kubeConfigPath string, chartPath strin
 
 func DeleteHelmRelease(kubeConfigPath string, releaseName string, namespace string) (bool, rest_errors.RestErr) {
 	releaseNamespace := namespace
+
+	// Use in-cluster config if running in Kubernetes, otherwise use provided kubeconfig
+	effectiveKubeConfigPath := getEffectiveKubeConfigPath(kubeConfigPath)
+
 	actionConfig := new(action.Configuration)
-	if err := actionConfig.Init(kube.GetConfig(kubeConfigPath, "", releaseNamespace), releaseNamespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
+	if err := actionConfig.Init(kube.GetConfig(effectiveKubeConfigPath, "", releaseNamespace), releaseNamespace, os.Getenv("HELM_DRIVER"), func(format string, v ...interface{}) {
 		_ = fmt.Sprintf(format, v)
 	}); err != nil {
 		restError := rest_errors.NewInternalServerError("Error initiating the action config in delete helm release", err)
@@ -215,8 +239,10 @@ func RestartHelmRelease(kubeConfigPath string, chartPath string, releaseName str
 }
 
 func GetUrl(kubeConfigPath string, name string, namespace string) (string, rest_errors.RestErr) {
+	// Use in-cluster config if running in Kubernetes, otherwise use provided kubeconfig
+	effectiveKubeConfigPath := getEffectiveKubeConfigPath(kubeConfigPath)
 
-	config, err := clientcmd.BuildConfigFromFlags("", kubeConfigPath)
+	config, err := clientcmd.BuildConfigFromFlags("", effectiveKubeConfigPath)
 	if err != nil {
 		restError := rest_errors.NewInternalServerError("Error building kube config", err)
 		return "", restError

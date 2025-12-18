@@ -21,11 +21,12 @@ class MLFlowModelLoader(ModelLoaderInterface):
             mlflow.set_tracking_uri(uri=self.config.get_mlflow_tracking_uri)
 
     def load_model(self):
-        # Load the MLflow model from the specified URI
-        model = self.mlflow.pyfunc.load_model(model_uri=self.config.get_model_uri)
+        # Prefer a local path when provided (init container pre-download)
+        model_uri = self.config.get_model_local_path or self.config.get_model_uri
+        model = self.mlflow.pyfunc.load_model(model_uri=model_uri)
         return model
 
     def reload_model(self):
-        # Reload the MLflow model from the specified URI
-        model = self.mlflow.pyfunc.load_model(model_uri=self.config.get_model_uri)
+        model_uri = self.config.get_model_local_path or self.config.get_model_uri
+        model = self.mlflow.pyfunc.load_model(model_uri=model_uri)
         return model

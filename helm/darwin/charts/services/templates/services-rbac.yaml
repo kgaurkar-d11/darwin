@@ -8,6 +8,74 @@ metadata:
     {{- include "services.labels" . | nindent 4 }}
     app.kubernetes.io/component: services
 ---
+# ClusterRole for cross-namespace operations (Helm release management, etc.)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ .Release.Name }}-services-cluster
+  labels:
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/component: services
+rules:
+# Helm release management (secrets store Helm release data)
+- apiGroups: [""]
+  resources: ["secrets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Kubernetes resource management for deployments
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["services", "configmaps", "pods", "persistentvolumeclaims"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# PersistentVolumes are cluster-scoped (not namespaced)
+- apiGroups: [""]
+  resources: ["persistentvolumes"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["namespaces"]
+  verbs: ["get", "list", "watch", "create"]
+# Batch resources (Jobs, CronJobs)
+- apiGroups: ["batch"]
+  resources: ["jobs", "cronjobs"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Networking
+- apiGroups: ["networking.k8s.io"]
+  resources: ["ingresses", "networkpolicies"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# RBAC (for creating ServiceAccounts, Roles, RoleBindings in target namespaces)
+- apiGroups: ["rbac.authorization.k8s.io"]
+  resources: ["roles", "rolebindings"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+- apiGroups: [""]
+  resources: ["serviceaccounts"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Autoscaling
+- apiGroups: ["autoscaling"]
+  resources: ["horizontalpodautoscalers"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+# Policy
+- apiGroups: ["policy"]
+  resources: ["poddisruptionbudgets"]
+  verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ .Release.Name }}-services-cluster
+  labels:
+    {{- include "services.labels" . | nindent 4 }}
+    app.kubernetes.io/component: services
+subjects:
+- kind: ServiceAccount
+  name: {{ .Release.Name }}-services
+  namespace: {{ .Values.global.namespace | default .Release.Namespace }}
+roleRef:
+  kind: ClusterRole
+  name: {{ .Release.Name }}-services-cluster
+  apiGroup: rbac.authorization.k8s.io
+---
+# Namespace-scoped Role for darwin namespace operations
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:

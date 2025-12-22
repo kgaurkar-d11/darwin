@@ -1,8 +1,8 @@
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, validator, model_validator, field_validator
 from typing import Optional, List, Literal
-
 from ml_serve_model.enums import BackendType, ServeType
+from ml_serve_core.client.mlflow_client import MLflowClient
 
 
 class CreateServeRequest(BaseModel):
@@ -341,40 +341,24 @@ class ModelDeploymentRequest(BaseModel):
         """
         Validate model URI format to fail fast with clear error messages.
         
-        Supports MLflow, S3, GCS, and local file URIs.
+        Uses MLflowClient's parse logic to ensure consistency.
         """
-        import re
-        
         if not value:
             raise ValueError("model_uri is required")
+            
+        client = MLflowClient()
+        identifier, artifact_path, uri_type, _ = client._parse_model_uri(value)
         
-        # Supported URI formats
-        valid_prefixes = [
-            "mlflow-artifacts:/",
-            "runs:/",
-            "models:/",
-            "s3://",
-            "gs://",
-            "file://",
-            "http://",
-            "https://"
-        ]
+        # Also support standard storage/web URIs that might not be parsed by MLflowClient
+        # Note: MLflowClient._parse_model_uri returns None uri_type for storage URIs
+        is_storage_uri = any(value.startswith(p) for p in ["s3://", "gs://", "file://", "http://", "https://"])
         
-        if not any(value.startswith(prefix) for prefix in valid_prefixes):
-            raise ValueError(
+        if uri_type is None and not is_storage_uri:
+             raise ValueError(
                 f"Invalid model_uri format: '{value}'. "
-                f"Must start with one of: {', '.join(valid_prefixes)}"
+                f"Must be a valid MLflow URI (models:/, runs:/, mlflow-artifacts:/) or storage URL."
             )
-        
-        # Additional validation for mlflow-artifacts URIs
-        if value.startswith("mlflow-artifacts:/"):
-            pattern = r"mlflow-artifacts:/[^/]+/[^/]+/artifacts/.+"
-            if not re.match(pattern, value):
-                raise ValueError(
-                    "Invalid mlflow-artifacts URI format. "
-                    "Expected: mlflow-artifacts:/<experiment_id>/<run_id>/artifacts/<path>"
-                )
-        
+
         return value
 
 

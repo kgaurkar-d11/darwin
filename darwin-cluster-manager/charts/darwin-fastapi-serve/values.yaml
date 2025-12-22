@@ -29,48 +29,8 @@ envs:
 # - auto: Automatically choose based on model size (requires storage_strategy.py)
 modelCache:
   enabled: false
-  
-  # ============================================================================
-  # CACHING STRATEGY
-  # ============================================================================
-  # Strategy: emptydir (per-pod) | pvc (shared via pre-deploy job) | auto
-  #
-  # EMPTYDIR STRATEGY:
-  #   - Uses per-pod temporary storage (emptyDir volume named "model-storage")
-  #   - Init container downloads model to pod-local disk before app starts
-  #   - Model deleted when pod terminates
-  #   - Best for: Small models (<1GB), fast startup, no PVC setup needed
-  #   - Volume path: /model-cache (model at root of volume)
-  #
-  # PVC STRATEGY:
-  #   - Uses shared persistent storage (PVC volume named "model-cache")
-  #   - Pre-deploy job downloads model once to PVC before deployment
-  #   - All pods read from shared PVC (no per-pod downloads)
-  #   - Model persists across deployments
-  #   - Best for: Large models (≥1GB), multiple replicas, faster scale-up
-  #   - Volume path: /model-cache/<cache-key> (subdirectory per deployment)
-  #   - Requires: ReadWriteMany (RWX) PVC named in pvcClaim below
-  #
-  # AUTO STRATEGY:
-  #   - Automatically selects emptydir or pvc based on model size
-  #   - Falls back to emptydir if PVC not available
-  #   - Recommended for one-click deployments
-  #
-  # NOTE: Different volume names are used for different strategies:
-  #   - "model-storage" (emptyDir) for emptydir strategy
-  #   - "model-cache" (PVC) for pvc strategy
-  # This allows proper Kubernetes volume type handling.
-  # ============================================================================
   strategy: emptydir
   cachePath: /model-cache
-  
-  # Deployment-specific parameters (provided at deploy time):
-  # - modelUri: MLflow model URI (e.g., models:/my-model/1)
-  # - trackingUri: MLflow tracking server URL
-  # - trackingUsername: MLflow auth username
-  # - trackingPassword: MLflow auth password
-  # These are NOT defaults - they're passed dynamically by the deployment service
-  # from environment variables (MLFLOW_TRACKING_URI, etc.)
   
   # Image used for pre-deployment job and cleanup job
   # MUST include: mlflow and kubernetes Python libraries

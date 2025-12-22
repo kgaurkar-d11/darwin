@@ -1,59 +1,7 @@
 {{- if .Values.modelCache.enabled }}
 {{/*
-================================================================================
-MODEL CACHING ARCHITECTURE
-================================================================================
-
 This template manages model download and caching for ML deployments.
 Two strategies are supported: emptydir (per-pod) and pvc (shared cache).
-
-ARCHITECTURE OVERVIEW:
-┌─────────────────────────────────────────────────────────────────────────┐
-│ EMPTYDIR STRATEGY (Small Models <1GB)                                   │
-├─────────────────────────────────────────────────────────────────────────┤
-│  1. Init Container (per pod):                                           │
-│     - Runs download_model_emptydir.py                                   │
-│     - Downloads model to pod-local emptyDir volume "model-storage"      │
-│     - Model at path: /model-cache/                                      │
-│  2. Main Container:                                                     │
-│     - Mounts same "model-storage" volume (readOnly)                     │
-│     - Reads model from: /model-cache/                                   │
-│  3. Lifecycle: Model deleted when pod terminates                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│ PVC STRATEGY (Large Models ≥1GB)                                        │
-├─────────────────────────────────────────────────────────────────────────┤
-│  1. Download Job (runs in parallel, non-blocking):                      │
-│     - Runs download_model.py as regular Job (NOT a Helm hook)          │
-│     - Downloads model to shared PVC "model-cache"                       │
-│     - Model at path: /model-cache/<cache-key>/                          │
-│     - Helm returns immediately without waiting                          │
-│  2. Init Container (per pod):                                           │
-│     - Waits for download job to complete                                │
-│     - Checks if model exists at /model-cache/<cache-key>/MLmodel       │
-│     - Proceeds once model is available                                  │
-│  3. Main Container (all pods):                                          │
-│     - Mounts "model-cache" PVC (readOnly)                               │
-│     - Reads model from: /model-cache/<cache-key>/                       │
-│  4. Lifecycle: Model persists across pod restarts and deployments       │
-└─────────────────────────────────────────────────────────────────────────┘
-
-VOLUME NAMING:
-  - "model-storage" = emptyDir volume (per-pod, temporary)
-  - "model-cache" = PVC volume (shared, persistent)
-  
-Different names are required because Kubernetes volumes cannot conditionally
-change type. Each strategy uses its appropriate volume type and name.
-
-CACHE KEY:
-  - Format: SHA256(deploymentName:modelUri)
-  - Purpose: Allows multiple deployments to share same PVC safely
-  - Example: /model-cache/47645fcee5596c6f7ddea5b80b572fa8/MLmodel
-
-RESOURCES DEFINED HERE:
-  1. PVC: Shared model cache (pvc strategy only, auto-created per namespace)
-  2. ConfigMap: Download scripts for both strategies
-  3. Job: Pre-deployment model download (pvc strategy only)
-================================================================================
 */}}
 {{- if eq .Values.modelCache.strategy "pvc" }}
 {{- $pvcName := .Values.modelCache.pvcName | default "ml-model-cache" }}
@@ -85,13 +33,9 @@ spec:
 {{- if not $existingPVC }}
 ---
 # PersistentVolumeClaim for shared model cache
-# 
 # IMPORTANT: This PVC is NAMESPACE-SCOPED and shared by ALL deployments in this namespace
 # - First deployment in a namespace creates it
 # - Subsequent deployments reuse it (lookup check prevents recreation)
-# - All model deployments in same namespace share this cache
-#
-# This PVC is only created if it doesn't already exist (checked via Helm lookup function)
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -148,7 +92,6 @@ data:
 ---
 # Model Download Job for PVC strategy
 # Runs in parallel with deployment (NOT a Helm hook) for fast API response
-# Deployment pods wait via init container until model is cached
 {{- if eq .Values.modelCache.strategy "pvc" }}
 apiVersion: batch/v1
 kind: Job
@@ -195,23 +138,11 @@ spec:
           - name: BACKOFF_SECONDS
             value: "{{ .Values.modelCache.backoffSeconds | default 10 }}"
           - name: MLFLOW_TRACKING_URI
-            valueFrom:
-              secretKeyRef:
-                name: {{ template "service-deployment.fullname" . }}-mlflow-creds
-                key: tracking-uri
-                optional: false
+            value: "{{ .Values.modelCache.trackingUri | quote }}"
           - name: MLFLOW_TRACKING_USERNAME
-            valueFrom:
-              secretKeyRef:
-                name: {{ template "service-deployment.fullname" . }}-mlflow-creds
-                key: username
-                optional: true
+            value: "{{ .Values.modelCache.trackingUsername | quote }}"
           - name: MLFLOW_TRACKING_PASSWORD
-            valueFrom:
-              secretKeyRef:
-                name: {{ template "service-deployment.fullname" . }}-mlflow-creds
-                key: password
-                optional: true
+            value: "{{ .Values.modelCache.trackingPassword | quote }}"
         resources:
           {{- toYaml .Values.modelCache.resources | nindent 10 }}
         volumeMounts:

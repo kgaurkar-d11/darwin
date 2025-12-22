@@ -13,17 +13,28 @@ from ml_serve_core.config.configs import Config
 class MLflowClient:
     """Client for validating MLflow model URIs."""
     
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(MLflowClient, cls).__new__(cls)
+        return cls._instance
+
     def __init__(
         self,
         tracking_uri: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None
     ):
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+            
         config = Config()
         self.tracking_uri = tracking_uri or config.mlflow_tracking_uri
         self.username = username or config.mlflow_tracking_username
         self.password = password or config.mlflow_tracking_password
         self.tracking_uri = self.tracking_uri.rstrip('/') if self.tracking_uri else ""
+        self._initialized = True
     
     def _get_auth_headers(self) -> dict:
         """Get authentication headers if credentials are configured."""
@@ -49,6 +60,9 @@ class MLflowClient:
             - For runs: (run_id, artifact_path, "runs", None)
             - For models: (model_name, version, "models", None)
         """
+        if not model_uri:
+            return None, None, None, None
+
         if model_uri.startswith("mlflow-artifacts:/"):
             # Format: mlflow-artifacts:/{experiment_id}/{run_id}/artifacts/{path}
             match = re.match(r"mlflow-artifacts:/(\d+)/([^/]+)/artifacts/(.+)", model_uri)

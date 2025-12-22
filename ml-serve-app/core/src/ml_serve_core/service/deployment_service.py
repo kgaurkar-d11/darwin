@@ -15,15 +15,14 @@ from ml_serve_core.constants.constants import (
     FASTAPI_SERVE_CHART_VERSION,
     JOB_CLUSTER_RUNTIME,
     DEFAULT_RUNTIME,
-    MLFLOW_TRACKING_URI,
-    MLFLOW_TRACKING_USERNAME,
-    MLFLOW_TRACKING_PASSWORD
 )
+from ml_serve_core.config.configs import Config
 from ml_serve_core.dtos.dtos import EnvConfig
 from ml_serve_core.service.serve_config_service import ServeConfigService
 from ml_serve_core.utils.utils import get_host_name, get_service_url, get_service_url_for_one_click
 from ml_serve_core.utils.yaml_utils import generate_fastapi_values, generate_fastapi_infra_values, \
     generate_fastapi_values_for_one_click_model_deployment
+from ml_serve_core.utils.storage_strategy import determine_storage_strategy
 from ml_serve_model import Serve, Artifact, Environment, APIServeInfraConfig, User, ScheduledWorkflowDeployment, \
     Deployment
 from ml_serve_model.active_deployment import ActiveDeployment
@@ -40,6 +39,7 @@ class DeploymentService:
     def __init__(self):
         self.dcm_client = DCMClient()
         self.serve_config_service = ServeConfigService()
+        self.config = Config()  # Centralized configuration
         self.workflow_client = DarwinWorkflowClient()
         self.mlflow_client = MLflowClient()
 
@@ -57,14 +57,14 @@ class DeploymentService:
     def _build_one_click_env_vars(self, model_uri: str, artifact_version: str) -> dict:
         env_vars = {
             "MLFLOW_MODEL_URI": model_uri,
-            "ARTIFACT_VERSION": artifact_version,
+            "MODEL_VERSION": artifact_version
         }
-        if MLFLOW_TRACKING_URI:
-            env_vars["MLFLOW_TRACKING_URI"] = MLFLOW_TRACKING_URI
-        if MLFLOW_TRACKING_USERNAME:
-            env_vars["MLFLOW_TRACKING_USERNAME"] = MLFLOW_TRACKING_USERNAME
-        if MLFLOW_TRACKING_PASSWORD:
-            env_vars["MLFLOW_TRACKING_PASSWORD"] = MLFLOW_TRACKING_PASSWORD
+        if self.config.mlflow_tracking_uri:
+            env_vars["MLFLOW_TRACKING_URI"] = self.config.mlflow_tracking_uri
+        if self.config.mlflow_tracking_username:
+            env_vars["MLFLOW_TRACKING_USERNAME"] = self.config.mlflow_tracking_username
+        if self.config.mlflow_tracking_password:
+            env_vars["MLFLOW_TRACKING_PASSWORD"] = self.config.mlflow_tracking_password
         return env_vars
 
     async def _update_active_deployment(self, serve: Serve, env: Environment, deployment: Deployment):
@@ -600,6 +600,16 @@ class DeploymentService:
 
         environment_variables = self._build_one_click_env_vars(request.model_uri, request.artifact_version)
 
+        # Determine optimal storage strategy for model caching
+        try:
+            storage_strategy = await determine_storage_strategy(
+                user_strategy=request.storage_strategy or "auto",
+                model_uri=request.model_uri,
+                mlflow_client=self.mlflow_client,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         values_json = generate_fastapi_values_for_one_click_model_deployment(
             name=serve.name,
             env=request.env,
@@ -612,6 +622,14 @@ class DeploymentService:
             min_replicas=request.min_replicas,
             max_replicas=request.max_replicas,
             node_capacity_type=request.node_capacity,
+            storage_strategy=storage_strategy,
+            model_uri=request.model_uri,
+            model_downloader_image=self.config.model_downloader_image,
+            model_cache_pvc_name=self.config.model_cache_pvc_name,
+            model_cache_path=self.config.model_cache_path,
+            tracking_uri=self.config.mlflow_tracking_uri,
+            tracking_username=self.config.mlflow_tracking_username,
+            tracking_password=self.config.mlflow_tracking_password,
         )
 
         artifact_identifier = f"{env.name}-{serve.name}-{artifact.version}"

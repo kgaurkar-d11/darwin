@@ -27,14 +27,18 @@ class MLFlowModelLoader(ModelLoaderInterface):
 
     def load_model(self):
         """Load the MLflow model from the specified URI."""
-        self._loaded_model = self.mlflow.pyfunc.load_model(model_uri=self.config.get_model_uri)
+        # Prefer a local path when provided (init container pre-download)
+        model_uri = self.config.get_model_local_path or self.config.get_model_uri
+        self._loaded_model = self.mlflow.pyfunc.load_model(model_uri=model_uri)
         # Initialize schema extractor with the loaded model
         self._schema_extractor = SchemaExtractor(self._loaded_model)
         return self._loaded_model
 
     def reload_model(self):
         """Reload the MLflow model from the specified URI."""
-        self._loaded_model = self.mlflow.pyfunc.load_model(model_uri=self.config.get_model_uri)
+        # Prefer a local path when provided (init container pre-download)
+        model_uri = self.config.get_model_local_path or self.config.get_model_uri
+        self._loaded_model = self.mlflow.pyfunc.load_model(model_uri=model_uri)
         # Re-initialize schema extractor
         self._schema_extractor = SchemaExtractor(self._loaded_model)
         return self._loaded_model

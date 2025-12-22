@@ -7,20 +7,34 @@ from urllib.parse import quote
 import aiohttp
 from loguru import logger
 
-from ml_serve_core.constants.constants import (
-    MLFLOW_TRACKING_URI,
-    MLFLOW_TRACKING_USERNAME,
-    MLFLOW_TRACKING_PASSWORD
-)
+from ml_serve_core.config.configs import Config
 
 
 class MLflowClient:
     """Client for validating MLflow model URIs."""
     
-    def __init__(self):
-        self.tracking_uri = MLFLOW_TRACKING_URI
-        self.username = MLFLOW_TRACKING_USERNAME
-        self.password = MLFLOW_TRACKING_PASSWORD
+    _instance = None
+
+    def __new__(cls, *args, **kwargs):
+        if not cls._instance:
+            cls._instance = super(MLflowClient, cls).__new__(cls)
+        return cls._instance
+
+    def __init__(
+        self,
+        tracking_uri: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None
+    ):
+        if hasattr(self, '_initialized') and self._initialized:
+            return
+            
+        config = Config()
+        self.tracking_uri = tracking_uri or config.mlflow_tracking_uri
+        self.username = username or config.mlflow_tracking_username
+        self.password = password or config.mlflow_tracking_password
+        self.tracking_uri = self.tracking_uri.rstrip('/') if self.tracking_uri else ""
+        self._initialized = True
     
     def _get_auth_headers(self) -> dict:
         """Get authentication headers if credentials are configured."""
@@ -46,6 +60,9 @@ class MLflowClient:
             - For runs: (run_id, artifact_path, "runs", None)
             - For models: (model_name, version, "models", None)
         """
+        if not model_uri:
+            return None, None, None, None
+
         if model_uri.startswith("mlflow-artifacts:/"):
             # Format: mlflow-artifacts:/{experiment_id}/{run_id}/artifacts/{path}
             match = re.match(r"mlflow-artifacts:/(\d+)/([^/]+)/artifacts/(.+)", model_uri)
@@ -233,3 +250,99 @@ class MLflowClient:
         
         return True, ""
 
+    async def get_model_size(self, model_uri: str) -> Optional[int]:
+        """Get total size of model artifacts in bytes."""
+        if not self.tracking_uri:
+            return None
+
+        try:
+            run_id, artifact_path = await self._resolve_run_and_path(model_uri)
+            if not run_id:
+                return None
+            return await self._calculate_artifacts_size(run_id, artifact_path)
+        except Exception as e:
+            logger.warning(f"Failed to determine model size for {model_uri}: {e}")
+            return None
+
+    async def _resolve_run_and_path(self, model_uri: str) -> Tuple[Optional[str], Optional[str]]:
+        """Resolve model URI to run_id and artifact_path."""
+        identifier, artifact_path, uri_type, _ = self._parse_model_uri(model_uri)
+        
+        if uri_type == "runs":
+            return identifier, artifact_path
+        
+        elif uri_type == "mlflow-artifacts":
+            return identifier, artifact_path
+            
+        elif uri_type == "models":
+            # identifier is model_name, artifact_path is version/stage
+            return await self._resolve_model_version_source(identifier, artifact_path)
+            
+        return None, None
+
+    async def _resolve_model_version_source(self, model_name: str, version_or_stage: str) -> Tuple[Optional[str], Optional[str]]:
+        """Get run_id and artifact_path from registered model version."""
+        headers = self._get_auth_headers()
+        async with aiohttp.ClientSession() as session:
+            if version_or_stage.isdigit():
+                url = f"{self.tracking_uri}/api/2.0/mlflow/model-versions/get"
+                params = {"name": model_name, "version": version_or_stage}
+                async with session.get(url, params=params, headers=headers) as response:
+                    if response.status != 200:
+                        return None, None
+                    data = await response.json()
+                    mv = data.get("model_version", {})
+            else:
+                # Stage
+                url = f"{self.tracking_uri}/api/2.0/mlflow/model-versions/search"
+                params = {"filter": f"name='{model_name}'"}
+                async with session.get(url, params=params, headers=headers) as response:
+                    if response.status != 200:
+                        return None, None
+                    data = await response.json()
+                    versions = data.get("model_versions", [])
+                    # Filter by stage
+                    stage_versions = [v for v in versions if v.get("current_stage", "").lower() == version_or_stage.lower()]
+                    if not stage_versions:
+                        return None, None
+                    stage_versions.sort(key=lambda v: int(v.get("version", 0)), reverse=True)
+                    mv = stage_versions[0]
+            
+            run_id = mv.get("run_id")
+            source = mv.get("source", "")
+            # Heuristic to extract relative path from source URL/path
+            path = source.split("/artifacts/", 1)[1] if "/artifacts/" in source else ""
+            return run_id, path
+
+    async def _calculate_artifacts_size(self, run_id: str, path: str) -> int:
+        """Recursively calculate total size of artifacts."""
+        total_size = 0
+        stack = [path] if path else [""]
+
+        headers = self._get_auth_headers()
+        url = f"{self.tracking_uri}/api/2.0/mlflow/artifacts/list"
+        
+        async with aiohttp.ClientSession() as session:
+            while stack:
+                current_path = stack.pop()
+                params = {"run_id": run_id}
+                if current_path:
+                    params["path"] = current_path
+                
+                try:
+                    async with session.get(url, params=params, headers=headers) as response:
+                        if response.status != 200:
+                            continue
+                        
+                        data = await response.json()
+                        files = data.get("files", [])
+                        
+                        for f in files:
+                            if f.get("is_dir"):
+                                stack.append(f.get("path"))
+                            else:
+                                total_size += int(f.get("file_size", 0))
+                except Exception as e:
+                    logger.warning(f"Error listing artifacts at {current_path}: {e}")
+                            
+        return total_size

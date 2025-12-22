@@ -43,8 +43,8 @@ def get(
 ):
     """Get configuration from YAML.
 
-    - `darwin-cli config get` → config dict of the current env.
-    - `darwin-cli config get --env <env>` → config dict of the specified env.
+    - `darwin config get` → config dict of the current env.
+    - `darwin config get --env <env>` → config dict of the specified env.
     """
     cfg = Config()
 

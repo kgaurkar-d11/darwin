@@ -1,5 +1,5 @@
 # Rule update configuration
-# Used with: darwin-cli catalog rules update --rule-id <id> --file
+# Used with: darwin catalog rules update --rule-id <id> --file
 asset_fqdn: example:table:lakehouse:segment:analytics:user_events
 schedule: "0 */12 * * *"
 severity: SLACK_ALERT

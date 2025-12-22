@@ -1,5 +1,5 @@
 # OpenLineage event for lineage submission
-# Used with: darwin-cli catalog lineage submit --file
+# Used with: darwin catalog lineage submit --file
 eventType: COMPLETE
 eventTime: '2024-01-15T10:30:00.000Z'
 run:

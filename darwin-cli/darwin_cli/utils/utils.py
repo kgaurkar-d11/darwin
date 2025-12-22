@@ -46,12 +46,12 @@ def set_working_env() -> None:
     """Ensure process ENV is aligned with the CLI's selected environment.
 
     Rules:
-    - For `darwin-cli config set ...` we do NOT enforce env, so users can bootstrap.
+    - For `darwin config set ...` we do NOT enforce env, so users can bootstrap.
     - For all other commands, env must be set AND supported, otherwise we fail fast
       with a clear error message.
     """
 
-    # Set env only for commands except `darwin-cli config set ...`
+    # Set env only for commands except `darwin config set ...`
     argv = sys.argv[1:]
 
     if not argv:
@@ -74,12 +74,12 @@ def set_working_env() -> None:
     if env is None:
         # Hard fail for all commands except config set
         raise RuntimeError(
-            "Environment is not set. Please configure it with 'darwin-cli config set --env <env>'."
+            "Environment is not set. Please configure it with 'darwin config set --env <env>'."
         )
 
     if env not in SUPPORTED_ENV:
         raise RuntimeError(
-            f"Unsupported environment '{env}'. Supported environments: {', '.join(sorted(SUPPORTED_ENV))}. Please configure it with: 'darwin-cli config set --env <env>'"
+            f"Unsupported environment '{env}'. Supported environments: {', '.join(sorted(SUPPORTED_ENV))}. Please configure it with: 'darwin config set --env <env>'"
         )
 
     os.environ[ENV_VAR] = env

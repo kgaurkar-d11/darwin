@@ -1,5 +1,5 @@
 # Entity configuration for Feature Store
-# Used with: darwin-cli feature-store entity create/register --file
+# Used with: darwin feature-store entity create/register --file
 entity:
   table_name: test_user_entity
   primary_keys:

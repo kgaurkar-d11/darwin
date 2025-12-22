@@ -5,7 +5,7 @@ from darwin_cli.commands import compute, config, workspace, serve, mlflow, featu
 
 
 app = typer.Typer(
-    name="darwin-cli",
+    name="darwin",
     help="Unified CLI for Darwin ML Platform",
     add_completion=True,
     no_args_is_help=True,

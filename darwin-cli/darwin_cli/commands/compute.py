@@ -370,32 +370,73 @@ def packages_list(
 def packages_install(
     cluster_id: str = typer.Option(..., "--cluster-id", help="Cluster ID"),
     source: str = typer.Option(..., "--source", help="Package source (pypi, maven, s3, workspace)"),
-    name: str = typer.Option(..., "--name", help="Package name"),
-    version: str = typer.Option(..., "--version", help="Package version"),
+    name: Optional[str] = typer.Option(None, "--name", help="Package name (for pypi/maven)"),
+    version: Optional[str] = typer.Option(None, "--version", help="Package version (for pypi/maven)"),
+    path: Optional[str] = typer.Option(None, "--path", help="Package path (for s3/workspace, e.g., s3://bucket/lib.whl or /workspace/path)"),
+    repository: Optional[str] = typer.Option(None, "--repository", help="Maven repository (maven or spark, for maven source only)"),
     retries: int = typer.Option(
         1,
         "--retries",
         help="Number of times to retry the SDK call on failure",
     ),
 ):
-    """Install a package on a cluster."""
-    logger.info(
-        "Installing package {}:{} from source {} on cluster: {}",  # noqa: E501
-        name,
-        version,
-        source,
-        cluster_id,
-    )
-
+    """Install a package on a cluster.
+    
+    Examples:
+        # PyPI package
+        darwin compute packages install --cluster-id <id> --source pypi --name tensorflow --version 2.19.0
+        
+        # Maven package
+        darwin compute packages install --cluster-id <id> --source maven --name org.apache.commons:commons-csv --version 1.14.0 --repository maven
+        
+        # S3 package
+        darwin compute packages install --cluster-id <id> --source s3 --path s3://bucket/packages/custom-lib.whl
+        
+        # Workspace package
+        darwin compute packages install --cluster-id <id> --source workspace --path /workspace/project/dist/my-lib-1.0.0.whl
+    """
     try:
-        package_source = PackageSource(source).value
+        package_source = PackageSource(source)
     except ValueError as exc:
         raise typer.BadParameter(
             f"Invalid package source '{source}'. Valid values: {[s.value for s in PackageSource]}"
         ) from exc
 
-    details = PackageDetails(name=name, version=version)
-    package = Package(source=package_source, body=details)
+    # Validate based on source type
+    if package_source == PackageSource.PYPI:
+        if not name or not version:
+            raise typer.BadParameter(f"--name and --version are required for {source} source")
+    elif package_source == PackageSource.MAVEN:
+        if not name or not version:
+            raise typer.BadParameter(f"--name and --version are required for {source} source")
+        if not repository:
+            raise typer.BadParameter(f"--repository is required for maven source (valid values: maven, spark)")
+    elif package_source in [PackageSource.S3, PackageSource.WORKSPACE]:
+        if not path:
+            raise typer.BadParameter(f"--path is required for {source} source")
+
+    # Build metadata for maven (pass string value to avoid enum serialization issues)
+    metadata = None
+    if package_source == PackageSource.MAVEN and repository:
+        from compute_model.package import MvnMetadata, MvnRepository
+        try:
+            # Validate the repository value
+            MvnRepository(repository)
+            metadata = MvnMetadata(repository=repository)
+        except ValueError:
+            raise typer.BadParameter(f"Invalid repository '{repository}'. Valid values: maven, spark")
+
+    logger.info(
+        "Installing package from source {} on cluster: {} (name={}, version={}, path={})",
+        source,
+        cluster_id,
+        name,
+        version,
+        path,
+    )
+
+    details = PackageDetails(name=name, version=version, path=path, metadata=metadata)
+    package = Package(source=package_source.value, body=details)
 
     result = _run_sync(compute_client.install_package, cluster_id, package, retries=retries)
     typer.echo(result)

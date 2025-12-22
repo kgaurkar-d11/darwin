@@ -1,5 +1,5 @@
 # Tenant configuration for Feature Store
-# Used with: darwin-cli feature-store tenant add --file
+# Used with: darwin feature-store tenant add --file
 feature_group_name: test_engagement_fg
 tenant_config:
   read: team-ml-reader

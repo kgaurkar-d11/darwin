@@ -1,5 +1,5 @@
 # Bulk metrics for Catalog
-# Used with: darwin-cli catalog metrics push --file
+# Used with: darwin catalog metrics push --file
 metrics:
   - metric_name: row_count
     asset_fqdn: datalake.analytics.user_events

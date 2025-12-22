@@ -13,18 +13,18 @@ echo "✅ Found configuration: $ENABLED_SERVICES_FILE"
 # ============================================================================
 # CLI TOOLS SETUP
 # ============================================================================
-# Check if hermes-cli is enabled and install if needed
-HERMES_CLI_ENABLED=$(yq eval '.cli-tools.hermes-cli // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
+# Check if darwin-cli is enabled and install if needed
+DARWIN_CLI_ENABLED=$(yq eval '.cli-tools.darwin-cli // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
 
-if [ "$HERMES_CLI_ENABLED" = "true" ]; then
+if [ "$DARWIN_CLI_ENABLED" = "true" ]; then
   echo ""
-  echo "📦 Setting up hermes-cli..."
+  echo "📦 Setting up darwin-cli..."
   
-  HERMES_CLI_PATH="hermes-cli"
-  if [ ! -d "$HERMES_CLI_PATH" ]; then
-    echo "   ⚠️  hermes-cli directory not found at $HERMES_CLI_PATH, skipping..."
+  DARWIN_CLI_PATH="darwin-cli"
+  if [ ! -d "$DARWIN_CLI_PATH" ]; then
+    echo "   ⚠️  darwin-cli directory not found at $DARWIN_CLI_PATH, skipping..."
   else
-    VENV_PATH="$HERMES_CLI_PATH/.venv"
+    VENV_PATH=".venv"
     
     # Create venv if it doesn't exist
     if [ ! -d "$VENV_PATH" ]; then
@@ -32,17 +32,17 @@ if [ "$HERMES_CLI_ENABLED" = "true" ]; then
       python3.9 -m venv "$VENV_PATH"
     fi
 
-    # Install hermes-cli
-    echo "   Installing hermes-cli package..."
+    # Install darwin-cli
+    echo "   Installing darwin-cli package..."
     (
-      cd "$HERMES_CLI_PATH" && source .venv/bin/activate && pip install -e . --force-reinstall --no-cache-dir
+      source "$VENV_PATH/bin/activate" && cd "$DARWIN_CLI_PATH" && python setup.py sdist && pip install --upgrade pip && pip install dist/darwin-cli-1.0.0.tar.gz --force-reinstall
     )
 
     if [ $? -eq 0 ]; then
-      echo "   ✅ hermes-cli installed successfully"
-      echo "   To use: source $HERMES_CLI_PATH/.venv/bin/activate"
+      echo "   ✅ darwin-cli installed successfully"
+      echo "   To use: source $VENV_PATH/bin/activate && darwin --help"
     else
-      echo "   ❌ Failed to install hermes-cli"
+      echo "   ❌ Failed to install darwin-cli"
     fi
   fi
   echo ""
@@ -137,14 +137,15 @@ helm upgrade --install darwin ./helm/darwin \
 
 echo "✅ Deployment completed!"
 
-# Show hermes-cli activation reminder if it was installed
-HERMES_CLI_ENABLED=$(yq eval '.cli-tools.hermes-cli // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
-if [ "$HERMES_CLI_ENABLED" = "true" ]; then
+# Show darwin-cli activation reminder if it was installed
+DARWIN_CLI_ENABLED=$(yq eval '.cli-tools.darwin-cli // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
+if [ "$DARWIN_CLI_ENABLED" = "true" ]; then
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "📦 To use hermes-cli, activate the virtual environment:"
+  echo "📦 To use darwin-cli, activate the virtual environment:"
   echo ""
-  echo "   source hermes-cli/.venv/bin/activate"
+  echo "   source .venv/bin/activate"
+  echo "   darwin --help"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 fi

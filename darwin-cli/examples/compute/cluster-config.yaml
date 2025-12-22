@@ -1,5 +1,5 @@
 # Example Compute Cluster Configuration
-# Usage: darwin-cli compute create --file cluster-config.yaml
+# Usage: darwin compute create --file cluster-config.yaml
 
 name: 'example-cluster'
 tags: ["example"]

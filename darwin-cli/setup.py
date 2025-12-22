@@ -141,7 +141,7 @@ if __name__ == "__main__":
     },
     entry_points={
         "console_scripts": [
-            "darwin-cli=darwin_cli.main:main",
+            "darwin=darwin_cli.main:main",
         ],
     },
     include_package_data=True,
@@ -166,8 +166,10 @@ if __name__ == "__main__":
     ],
 )
 
-try:
-    clean_up(dest_dirs)
-except:
-    pass
+# Only clean up for sdist/wheel builds, not for editable installs
+if any(cmd in sys.argv for cmd in ["sdist", "wheel"]):
+    try:
+        clean_up(dest_dirs)
+    except:
+        pass
 

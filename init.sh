@@ -20,6 +20,12 @@ if [ ! -f "$YAML_FILE" ]; then
   exit 1
 fi
 
+DEP_FILE="service-dependencies.yaml"
+if [ ! -f "$DEP_FILE" ]; then
+  echo "❌ $DEP_FILE not found in current directory."
+  exit 1
+fi
+
 # Create .setup directory if it doesn't exist
 mkdir -p .setup
 
@@ -86,48 +92,9 @@ FEATURE_APPS_workflow="darwin-workflow"
 # List of all top-level features
 ALL_FEATURES="compute workspace feature_store mlflow serve catalog chronos workflow"
 
-# Service-to-service dependencies
-# Format: SERVICE_DEPS_<service>="dep1 dep2" (use underscores for hyphens in var names)
-SERVICE_DEPS_darwin_ofs_v2="darwin-ofs-v2-admin"
-SERVICE_DEPS_darwin_ofs_v2_admin=""
-SERVICE_DEPS_darwin_ofs_v2_consumer="darwin-ofs-v2-admin"
-SERVICE_DEPS_darwin_mlflow=""
-SERVICE_DEPS_darwin_mlflow_app="darwin-mlflow"
-SERVICE_DEPS_chronos=""
-SERVICE_DEPS_chronos_consumer="chronos"
-SERVICE_DEPS_darwin_compute="darwin-cluster-manager"
-SERVICE_DEPS_darwin_cluster_manager=""
-SERVICE_DEPS_darwin_workspace="darwin-compute"
-SERVICE_DEPS_ml_serve_app="artifact-builder darwin-cluster-manager darwin-mlflow-app"
-SERVICE_DEPS_artifact_builder=""
-SERVICE_DEPS_darwin_catalog=""
-SERVICE_DEPS_darwin_workflow="darwin-compute darwin-cluster-manager"
-
-# Service-to-datastore dependencies
-# Format: SERVICE_DATASTORES_<service>="ds1 ds2 ds3"
-SERVICE_DATASTORES_darwin_ofs_v2="cassandra mysql busybox"
-SERVICE_DATASTORES_darwin_ofs_v2_admin="zookeeper cassandra mysql localstack kafka busybox"
-SERVICE_DATASTORES_darwin_ofs_v2_consumer="zookeeper cassandra mysql localstack kafka busybox"
-SERVICE_DATASTORES_darwin_mlflow="mysql localstack busybox"
-SERVICE_DATASTORES_darwin_mlflow_app="mysql localstack busybox"
-SERVICE_DATASTORES_chronos="mysql localstack busybox kafka zookeeper"
-SERVICE_DATASTORES_chronos_consumer="mysql localstack busybox kafka zookeeper"
-SERVICE_DATASTORES_darwin_compute="mysql opensearch busybox"
-SERVICE_DATASTORES_darwin_cluster_manager="mysql opensearch localstack busybox"
-SERVICE_DATASTORES_darwin_workspace="mysql busybox"
-SERVICE_DATASTORES_ml_serve_app="mysql localstack busybox"
-SERVICE_DATASTORES_artifact_builder="mysql localstack busybox"
-SERVICE_DATASTORES_darwin_catalog="mysql localstack"
-SERVICE_DATASTORES_darwin_workflow="mysql elasticsearch localstack busybox airflow"
-
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
-
-# Convert service name to variable-safe name (replace hyphens with underscores)
-to_var_name() {
-  echo "$1" | tr '-' '_'
-}
 
 # Get feature apps by feature name
 get_feature_apps() {
@@ -139,15 +106,13 @@ get_feature_apps() {
 # Get service dependencies
 get_service_deps() {
   local service="$1"
-  local var_name="SERVICE_DEPS_$(to_var_name "$service")"
-  eval echo "\$$var_name"
+  yq eval ".services[\"$service\"].required_services[]" "$DEP_FILE" 2>/dev/null
 }
 
 # Get service datastores
 get_service_datastores() {
   local service="$1"
-  local var_name="SERVICE_DATASTORES_$(to_var_name "$service")"
-  eval echo "\$$var_name"
+  yq eval ".services[\"$service\"].required_datastores[]" "$DEP_FILE" 2>/dev/null
 }
 
 # Check if item is in space-separated list

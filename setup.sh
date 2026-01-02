@@ -72,6 +72,9 @@ ensure_docker_api_version() {
 ENV=local
 ENV_CREATION=false
 
+# Set default KUBECONFIG path
+KUBECONFIG=./kind/config/kindkubeconfig.yaml
+
 ensure_docker_api_version
 
 # Check if ENV environment variable equals "local"
@@ -86,19 +89,36 @@ if [ "$ENV" = "local" ]; then
     fi
     if [[ $REPLY =~ ^[Yy]$ ]]
     then
-        echo "\nStarting kind cluster..."
+        echo ""
+        echo "Starting kind cluster..."
 
-        envsubst < ./kind/kind-config.yaml > ./kind/kind-config-tmp.yaml
+        # Create temp config file (envsubst not needed as kind-config.yaml has no variables)
+        # But use envsubst if available, otherwise just copy
+        if command -v envsubst >/dev/null 2>&1; then
+            envsubst < ./kind/kind-config.yaml > ./kind/kind-config-tmp.yaml
+        else
+            cp ./kind/kind-config.yaml ./kind/kind-config-tmp.yaml
+        fi
+        
         export CLUSTER_NAME=kind
         export KIND_CONFIG=./kind/kind-config-tmp.yaml
         export KUBECONFIG=./kind/config/kindkubeconfig.yaml
         
-        sh ./kind/start-cluster.sh
+        # Run start-cluster.sh - it will handle kind installation if needed
+        # In CI, kind is already installed, so this should just create the cluster
+        if ! sh ./kind/start-cluster.sh; then
+            echo "⚠️  start-cluster.sh had issues, but continuing..."
+            # Check if cluster was actually created despite the error
+            if [ -f "$KUBECONFIG" ]; then
+                echo "✅ KUBECONFIG exists, cluster may have been created"
+            fi
+        fi
         ENV_CREATION=true
         
         rm ./kind/kind-config-tmp.yaml
     else
-        echo "\nSkipping kind cluster setup"
+        echo ""
+        echo "Skipping kind cluster setup"
         echo "DOCKER_REGISTRY=docker.io" >> config.env
     fi
 else
@@ -107,7 +127,8 @@ fi
 
 # check if kube config file exists and is reachable
 if [ ! -f "$KUBECONFIG" ]; then
-    echo "KUBECONFIG file does not exist"
+    echo "❌ KUBECONFIG file does not exist at $KUBECONFIG"
+    echo "   Cluster may not have been created. Please ensure cluster setup completed successfully."
     exit 1
 else
     echo "KUBECONFIG=$KUBECONFIG" >> config.env

@@ -92,6 +92,40 @@ FEATURE_APPS_workflow="darwin-workflow"
 # List of all top-level features
 ALL_FEATURES="compute workspace feature_store mlflow serve catalog chronos workflow"
 
+# Service-to-service dependencies
+# Format: SERVICE_DEPS_<service>="dep1 dep2" (use underscores for hyphens in var names)
+SERVICE_DEPS_darwin_ofs_v2="darwin-ofs-v2-admin"
+SERVICE_DEPS_darwin_ofs_v2_admin=""
+SERVICE_DEPS_darwin_ofs_v2_consumer="darwin-ofs-v2-admin"
+SERVICE_DEPS_darwin_mlflow=""
+SERVICE_DEPS_darwin_mlflow_app="darwin-mlflow"
+SERVICE_DEPS_chronos=""
+SERVICE_DEPS_chronos_consumer="chronos"
+SERVICE_DEPS_darwin_compute="darwin-cluster-manager"
+SERVICE_DEPS_darwin_cluster_manager=""
+SERVICE_DEPS_darwin_workspace="darwin-compute"
+SERVICE_DEPS_ml_serve_app="artifact-builder darwin-cluster-manager darwin-mlflow-app"
+SERVICE_DEPS_artifact_builder=""
+SERVICE_DEPS_darwin_catalog=""
+SERVICE_DEPS_darwin_workflow="darwin-compute darwin-cluster-manager"
+
+# Service-to-datastore dependencies
+# Format: SERVICE_DATASTORES_<service>="ds1 ds2 ds3"
+SERVICE_DATASTORES_darwin_ofs_v2="cassandra mysql busybox"
+SERVICE_DATASTORES_darwin_ofs_v2_admin="zookeeper cassandra mysql localstack kafka busybox"
+SERVICE_DATASTORES_darwin_ofs_v2_consumer="zookeeper cassandra mysql localstack kafka busybox"
+SERVICE_DATASTORES_darwin_mlflow="mysql localstack busybox"
+SERVICE_DATASTORES_darwin_mlflow_app="mysql localstack busybox"
+SERVICE_DATASTORES_chronos="mysql localstack busybox kafka zookeeper"
+SERVICE_DATASTORES_chronos_consumer="mysql localstack busybox kafka zookeeper"
+SERVICE_DATASTORES_darwin_compute="mysql opensearch busybox"
+SERVICE_DATASTORES_darwin_cluster_manager="mysql opensearch localstack busybox"
+SERVICE_DATASTORES_darwin_workspace="mysql busybox"
+SERVICE_DATASTORES_ml_serve_app="mysql localstack busybox"
+SERVICE_DATASTORES_artifact_builder="mysql localstack busybox"
+SERVICE_DATASTORES_darwin_catalog="mysql localstack"
+SERVICE_DATASTORES_darwin_workflow="mysql elasticsearch localstack busybox airflow"
+
 # ============================================================================
 # HELPER FUNCTIONS
 # ============================================================================
@@ -366,6 +400,49 @@ if [ "$sdk_defined" = "true" ]; then
 fi
 
 # ============================================================================
+# RAY RUNTIMES (select specific runtimes when darwin-compute is enabled)
+# ============================================================================
+echo ""
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo "                       RAY RUNTIMES"
+echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+echo ""
+
+ENABLED_RAY_IMAGES=""
+
+ray_count=$(yq eval '.ray-images | length' "$YAML_FILE")
+if [ "$ray_count" = "0" ] || [ "$ray_count" = "null" ]; then
+  echo "  ⏭️  No Ray runtimes defined in services.yaml"
+elif list_contains "$ENABLED_SERVICES" "darwin-compute"; then
+  echo "Select which Ray runtimes to enable:"
+  echo ""
+  
+  i=0
+  while [ $i -lt $ray_count ]; do
+    image_name=$(yq eval ".ray-images[$i].image-name" "$YAML_FILE")
+    
+    if [ "$ALL_YES" = "true" ]; then
+      ENABLED_RAY_IMAGES=$(list_add "$ENABLED_RAY_IMAGES" "$image_name")
+    else
+      prompt_yn "  Enable $image_name?" "y"
+      if [ "$PROMPT_RESULT" = "true" ]; then
+        ENABLED_RAY_IMAGES=$(list_add "$ENABLED_RAY_IMAGES" "$image_name")
+      fi
+    fi
+    
+    i=$((i + 1))
+  done
+  
+  if [ -z "$ENABLED_RAY_IMAGES" ]; then
+    echo ""
+    echo "  ⚠️  No Ray runtimes selected. Enabling ray:2.37.0 as default."
+    ENABLED_RAY_IMAGES="ray:2.37.0"
+  fi
+else
+  echo "  ⏭️  Ray runtimes skipped (requires darwin-compute)"
+fi
+
+# ============================================================================
 # CLI TOOLS
 # ============================================================================
 echo ""
@@ -454,8 +531,8 @@ else
   while [ $i -lt $ray_count ]; do
     image_name=$(yq eval ".ray-images[$i].image-name" "$YAML_FILE")
     
-    if [ "$COMPUTE_ENABLED" = "true" ]; then
-      echo "  \"$image_name\": true  # (auto-enabled with darwin-compute)" >> "$OUTPUT_FILE"
+    if list_contains "$ENABLED_RAY_IMAGES" "$image_name"; then
+      echo "  \"$image_name\": true  # (selected)" >> "$OUTPUT_FILE"
     else
       echo "  \"$image_name\": false" >> "$OUTPUT_FILE"
     fi
@@ -549,11 +626,17 @@ else
   echo "   (none)"
 fi
 
-# Show ray images only if compute is enabled
-if [ "$COMPUTE_ENABLED" = "true" ]; then
+# Show ray images if any are enabled
+if [ -n "$ENABLED_RAY_IMAGES" ]; then
   echo ""
-  echo "🔷 Ray Images (auto-enabled with darwin-compute):"
-  yq eval '.ray-images | to_entries | .[] | select(.value == true) | "   ✓ " + .key' "$OUTPUT_FILE" 2>/dev/null || echo "   (none)"
+  echo "🔷 Ray Images (selected):"
+  for img in $ENABLED_RAY_IMAGES; do
+    echo "   ✓ $img"
+  done
+elif [ "$COMPUTE_ENABLED" = "true" ]; then
+  echo ""
+  echo "🔷 Ray Images:"
+  echo "   (none selected)"
 fi
 
 # Show serve images only if ml-serve-app is enabled

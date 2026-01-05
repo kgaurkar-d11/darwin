@@ -735,6 +735,15 @@ pkill -f "port-forward.*8265"
 kubectl port-forward -n ray svc/{cluster_id}-kuberay-head-svc 8265:8265 &
 ```
 
+**Issue: Cluster not starting due to long init script**
+
+If your `init_script` in the cluster configuration is too long, the cluster may fail to start. This happens because init scripts are executed during pod startup and have timeout limitations.
+
+**Solutions:**
+- Use the **Library Installation API** to install packages instead of init scripts
+- Create a **custom runtime** with your dependencies pre-installed
+- Split long scripts into smaller, essential commands
+
 ---
 
 ## 🧪 Creating Your First Project
@@ -1085,6 +1094,15 @@ API documentation available at `<service-url>/docs` (Swagger UI).
 ---
 
 ## 🧩 Extensibility
+
+### Available Runtimes
+
+Darwin provides pre-built Ray runtimes for cluster creation. The **Runtime Name** is what you pass to the API when creating clusters (e.g., `"runtime": "0.1"`).
+
+| Runtime Name | Image | Ray Version | Python | Class | Type |
+|--------------|-------|-------------|--------|-------|------|
+| 0.0 | ray:2.37.0 | 2.37.0 | 3.10 | CPU | Ray Only |
+| 0.1 | ray:2.53.0 | 2.53.0 | 3.10 | CPU | Ray Only |
 
 ### Custom Runtimes
 Add new Ray runtimes by creating Dockerfiles in `darwin-compute/runtimes/`:

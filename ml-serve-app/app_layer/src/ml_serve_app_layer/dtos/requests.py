@@ -1,8 +1,8 @@
 from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, Field, validator, model_validator, field_validator
 from typing import Optional, List, Literal
-
 from ml_serve_model.enums import BackendType, ServeType
+from ml_serve_core.client.mlflow_client import MLflowClient
 
 
 class CreateServeRequest(BaseModel):
@@ -291,6 +291,10 @@ class ModelDeploymentRequest(BaseModel):
         ..., min_length=1, description="URI of the model."
     )
     env: str = Field(..., description="Environment name (e.g., 'local', 'prod')")
+    storage_strategy: Optional[Literal["auto", "emptydir", "pvc"]] = Field(
+        "auto",
+        description="Storage strategy for model download: auto (default), emptydir, or pvc.",
+    )
 
     cores: int = Field(4, ge=1, le=64, description="Number of CPU cores to allocate (1–64).")
     memory: int = Field(8, ge=1, le=512, description="Amount of memory in GB (1–512).")
@@ -320,6 +324,41 @@ class ModelDeploymentRequest(BaseModel):
     def strip_whitespace(cls, value):
         if isinstance(value, str):
             return value.strip()
+        return value
+
+    @field_validator("storage_strategy", mode="before")
+    def normalize_strategy(cls, value):
+        if value is None:
+            return "auto"
+        if isinstance(value, str):
+            value = value.strip().lower()
+            if value not in {"auto", "emptydir", "pvc"}:
+                raise ValueError("storage_strategy must be one of: auto, emptydir, pvc")
+        return value
+
+    @field_validator("model_uri", mode="after")
+    def validate_model_uri_format(cls, value):
+        """
+        Validate model URI format to fail fast with clear error messages.
+        
+        Uses MLflowClient's parse logic to ensure consistency.
+        """
+        if not value:
+            raise ValueError("model_uri is required")
+            
+        client = MLflowClient()
+        identifier, artifact_path, uri_type, _ = client._parse_model_uri(value)
+        
+        # Also support standard storage/web URIs that might not be parsed by MLflowClient
+        # Note: MLflowClient._parse_model_uri returns None uri_type for storage URIs
+        is_storage_uri = any(value.startswith(p) for p in ["s3://", "gs://", "file://", "http://", "https://"])
+        
+        if uri_type is None and not is_storage_uri:
+             raise ValueError(
+                f"Invalid model_uri format: '{value}'. "
+                f"Must be a valid MLflow URI (models:/, runs:/, mlflow-artifacts:/) or storage URL."
+            )
+
         return value
 
 

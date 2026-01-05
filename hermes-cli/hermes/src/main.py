@@ -367,13 +367,17 @@ def serve_deploy(
 def serve_deploy_model(
     serve_name: str = typer.Option(..., "--serve-name", help="Serve name (1-16 chars, no underscores)"),
     artifact_version: str = typer.Option(..., help="Version label for the one-click artifact"),
-    model_uri: str = typer.Option(..., "--model-uri", help="MLflow model URI"),
+    model_uri: str = typer.Option(..., help="MLflow model URI (e.g., 's3://bucket/path/to/model')"),
     env: str = typer.Option(..., "--env", help="Environment"),
-    cores: int = typer.Option(..., "--cores"),
-    memory: int = typer.Option(..., "--memory"),
-    node_capacity: str = typer.Option(..., "--node-capacity"),
-    min_replicas: int = typer.Option(..., "--min-replicas"),
-    max_replicas: int = typer.Option(..., "--max-replicas"),
+    storage_strategy: str = typer.Option(
+        "auto",
+        help="Storage strategy for model download: auto (default), emptydir, or pvc",
+    ),
+    cores: int = typer.Option(..., help="Number of CPU cores (e.g., 4)"),
+    memory: int = typer.Option(..., help="Memory in GB (e.g., 8)"),
+    node_capacity: str = typer.Option(..., help="Node capacity type (e.g., 'spot')"),
+    min_replicas: int = typer.Option(..., help="Minimum number of replicas (e.g., 1)"),
+    max_replicas: int = typer.Option(..., help="Maximum number of replicas (e.g., 1)"),
 ):
     """One-click model deploy (create serve + config + artifact + deploy)."""
     try:
@@ -383,6 +387,7 @@ def serve_deploy_model(
                 serve_name=serve_name,
                 artifact_version=artifact_version,
                 model_uri=model_uri,
+                storage_strategy=storage_strategy,
                 cores=cores,
                 memory=memory,
                 node_capacity=node_capacity,

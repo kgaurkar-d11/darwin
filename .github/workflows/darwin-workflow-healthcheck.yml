@@ -311,27 +311,90 @@ jobs:
           echo "⏳ Waiting for darwin-workflow pod to be ready..."
           export KUBECONFIG=./kind/config/kindkubeconfig.yaml
           
+          # Try to find the pod using multiple label selectors
+          # The pod is labeled with app.kubernetes.io/component=workflow, not app.kubernetes.io/name=darwin-workflow
+          WORKFLOW_POD=""
+          WORKFLOW_SELECTOR=""
+          
+          # Try different label selectors
+          if kubectl get pods -n darwin -l app.kubernetes.io/component=workflow --no-headers 2>/dev/null | head -1 | awk '{print $1}' | grep -q .; then
+            WORKFLOW_SELECTOR="app.kubernetes.io/component=workflow"
+            WORKFLOW_POD=$(kubectl get pods -n darwin -l app.kubernetes.io/component=workflow --no-headers 2>/dev/null | head -1 | awk '{print $1}')
+          elif kubectl get pods -n darwin -l component-name=darwin-workflow --no-headers 2>/dev/null | head -1 | awk '{print $1}' | grep -q .; then
+            WORKFLOW_SELECTOR="component-name=darwin-workflow"
+            WORKFLOW_POD=$(kubectl get pods -n darwin -l component-name=darwin-workflow --no-headers 2>/dev/null | head -1 | awk '{print $1}')
+          elif kubectl get pods -n darwin | grep -E "darwin-workflow|workflow" | head -1 | awk '{print $1}' | grep -q .; then
+            WORKFLOW_POD=$(kubectl get pods -n darwin | grep -E "darwin-workflow|workflow" | head -1 | awk '{print $1}')
+            WORKFLOW_SELECTOR="name"
+          fi
+          
+          if [ -z "$WORKFLOW_POD" ]; then
+            echo "⚠️  Could not find darwin-workflow pod with any label selector"
+            echo "Checking all pods in darwin namespace:"
+            kubectl get pods -n darwin || true
+            echo ""
+            echo "Checking deployments:"
+            kubectl get deployments -n darwin | grep workflow || true
+            exit 1
+          fi
+          
+          echo "Found workflow pod: $WORKFLOW_POD (using selector: $WORKFLOW_SELECTOR)"
+          
           max_attempts=60
           attempt=0
           while [ $attempt -lt $max_attempts ]; do
             # Check if pod exists and is ready
-            if kubectl get pods -n darwin -l app.kubernetes.io/name=darwin-workflow 2>/dev/null | grep -q "Running\|1/1\|2/2"; then
+            if [ "$WORKFLOW_SELECTOR" = "name" ]; then
+              POD_STATUS=$(kubectl get pod "$WORKFLOW_POD" -n darwin -o jsonpath='{.status.phase}' 2>/dev/null || echo "NotFound")
+              READY=$(kubectl get pod "$WORKFLOW_POD" -n darwin -o jsonpath='{.status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+            else
+              POD_STATUS=$(kubectl get pods -n darwin -l "$WORKFLOW_SELECTOR" -o jsonpath='{.items[0].status.phase}' 2>/dev/null || echo "NotFound")
+              READY=$(kubectl get pods -n darwin -l "$WORKFLOW_SELECTOR" -o jsonpath='{.items[0].status.containerStatuses[0].ready}' 2>/dev/null || echo "false")
+            fi
+            
+            if [ "$POD_STATUS" = "Running" ] && [ "$READY" = "true" ]; then
               echo "✅ darwin-workflow pod is ready"
-              kubectl get pods -n darwin -l app.kubernetes.io/name=darwin-workflow
+              if [ "$WORKFLOW_SELECTOR" = "name" ]; then
+                kubectl get pod "$WORKFLOW_POD" -n darwin
+              else
+                kubectl get pods -n darwin -l "$WORKFLOW_SELECTOR"
+              fi
               break
             fi
-            echo "Attempt $((attempt+1))/$max_attempts: Waiting for pod..."
-            kubectl get pods -n darwin -l app.kubernetes.io/name=darwin-workflow || true
+            
+            echo "Attempt $((attempt+1))/$max_attempts: Waiting for pod... (Status: $POD_STATUS, Ready: $READY)"
+            if [ "$WORKFLOW_SELECTOR" = "name" ]; then
+              kubectl get pod "$WORKFLOW_POD" -n darwin || true
+            else
+              kubectl get pods -n darwin -l "$WORKFLOW_SELECTOR" || true
+            fi
             sleep 5
             attempt=$((attempt+1))
           done
           
           if [ $attempt -eq $max_attempts ]; then
-            echo "❌ darwin-workflow pod did not become ready"
+            echo "❌ darwin-workflow pod did not become ready after $max_attempts attempts"
+            echo ""
             echo "Pod status:"
-            kubectl get pods -n darwin -l app.kubernetes.io/name=darwin-workflow || true
-            echo "Pod logs:"
-            kubectl logs -n darwin -l app.kubernetes.io/name=darwin-workflow --tail=50 || true
+            if [ "$WORKFLOW_SELECTOR" = "name" ]; then
+              kubectl get pod "$WORKFLOW_POD" -n darwin || true
+              kubectl describe pod "$WORKFLOW_POD" -n darwin || true
+              echo ""
+              echo "Pod logs:"
+              kubectl logs "$WORKFLOW_POD" -n darwin --tail=50 || true
+            else
+              kubectl get pods -n darwin -l "$WORKFLOW_SELECTOR" || true
+              WORKFLOW_POD_NAME=$(kubectl get pods -n darwin -l "$WORKFLOW_SELECTOR" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null || echo "")
+              if [ -n "$WORKFLOW_POD_NAME" ]; then
+                kubectl describe pod "$WORKFLOW_POD_NAME" -n darwin || true
+                echo ""
+                echo "Pod logs:"
+                kubectl logs "$WORKFLOW_POD_NAME" -n darwin --tail=50 || true
+              fi
+            fi
+            echo ""
+            echo "All pods in darwin namespace:"
+            kubectl get pods -n darwin || true
             exit 1
           fi
       - name: Verify Services Are Healthy (as per root README)

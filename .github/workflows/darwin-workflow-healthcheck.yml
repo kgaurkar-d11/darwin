@@ -204,6 +204,21 @@ jobs:
           echo "🚀 Step 3: Running start.sh to deploy to Kubernetes..."
           export KUBECONFIG=./kind/config/kindkubeconfig.yaml
           
+          # Verify config.env exists before running start.sh
+          echo "🔍 Pre-flight checks..."
+          echo "Current directory: $(pwd)"
+          echo "Checking for config.env..."
+          if [ -f config.env ]; then
+            echo "✅ config.env exists at: $(realpath config.env)"
+            echo "Contents:"
+            cat config.env
+          else
+            echo "❌ config.env not found in current directory!"
+            echo "Searching for config.env..."
+            find . -name "config.env" -type f 2>/dev/null | head -5 || echo "Not found anywhere"
+            exit 1
+          fi
+          
           # Verify cluster is accessible before deployment
           echo "🔍 Verifying cluster connectivity..."
           if ! kubectl get nodes >/dev/null 2>&1; then
@@ -213,23 +228,54 @@ jobs:
           
           # Run start.sh - it will handle config.env sourcing internally
           # start.sh now uses absolute paths and will provide clear error if config.env is missing
-          if ! ./start.sh; then
-            echo "❌ start.sh failed, checking deployment status..."
+          echo "📋 Running start.sh..."
+          # Capture output and exit code
+          set +e  # Don't exit on error immediately, we want to capture diagnostics
+          ./start.sh 2>&1 | tee /tmp/start.sh.log
+          START_EXIT_CODE=${PIPESTATUS[0]}
+          set -e
+          
+          if [ $START_EXIT_CODE -ne 0 ]; then
+            echo "❌ start.sh failed with exit code $START_EXIT_CODE"
             echo ""
-            echo "Helm releases:"
+            echo "=== start.sh output ==="
+            cat /tmp/start.sh.log || true
+            echo ""
+            echo "=== Helm releases ==="
             helm list -n darwin || true
             echo ""
-            echo "All pods in darwin namespace:"
-            kubectl get pods -n darwin || true
-            echo ""
-            echo "All resources in darwin namespace:"
-            kubectl get all -n darwin || true
-            echo ""
-            echo "Helm release status:"
+            echo "=== Helm release status ==="
             helm status darwin -n darwin || true
             echo ""
-            echo "Helm release history:"
+            echo "=== Helm release history ==="
             helm history darwin -n darwin || true
+            echo ""
+            echo "=== All pods in darwin namespace ==="
+            kubectl get pods -n darwin || true
+            echo ""
+            echo "=== Failed pods details ==="
+            kubectl get pods -n darwin -o json | jq -r '.items[] | select(.status.phase != "Running" and .status.phase != "Succeeded") | "\(.metadata.name): \(.status.phase) - \(.status.reason // "N/A")"' || true
+            echo ""
+            echo "=== Pod events ==="
+            kubectl get events -n darwin --sort-by='.lastTimestamp' | tail -20 || true
+            echo ""
+            echo "=== Readiness check job (if exists) ==="
+            kubectl get jobs -n darwin | grep readiness || true
+            kubectl logs -n darwin -l job-name=darwin-services-readiness-check --tail=50 || true
+            echo ""
+            echo "=== All resources in darwin namespace ==="
+            kubectl get all -n darwin || true
+            echo ""
+            echo "=== Describe failed pods ==="
+            for pod in $(kubectl get pods -n darwin -o jsonpath='{.items[?(@.status.phase!="Running" && @.status.phase!="Succeeded")].metadata.name}'); do
+              echo "--- Describing pod: $pod ---"
+              kubectl describe pod -n darwin "$pod" || true
+              echo "--- Logs for pod: $pod ---"
+              kubectl logs -n darwin "$pod" --tail=50 || true
+            done
+            echo ""
+            echo "=== Helm test results (if any) ==="
+            helm test darwin -n darwin || true
             exit 1
           fi
           

@@ -144,65 +144,92 @@ echo ""
 echo "📦 Installing Darwin Platform with configuration overrides..."
 
 # Install Darwin Platform umbrella chart with overrides
-# Use --wait=false to avoid hanging on resource constraints, then manually wait for critical pods
+# Omit --wait flag to avoid hanging on resource constraints, then manually wait for critical pods
 # This prevents runner timeouts in CI environments
 echo "   Deploying helm chart (without --wait to avoid timeouts)..."
-if ! helm upgrade --install darwin ./helm/darwin \
+echo "   This may take a few minutes..."
+set +e  # Temporarily disable exit on error for helm command
+# Use timeout command as an extra safety net (600s = 10 minutes max)
+timeout 600s helm upgrade --install darwin ./helm/darwin \
   --namespace darwin \
   --create-namespace \
-  --wait=false \
   --timeout 300s \
-  $HELM_OVERRIDES; then
-  echo "❌ Helm deployment failed!"
+  $HELM_OVERRIDES
+HELM_EXIT_CODE=$?
+set -e  # Re-enable exit on error
+
+if [ $HELM_EXIT_CODE -ne 0 ]; then
+  if [ $HELM_EXIT_CODE -eq 124 ]; then
+    echo "❌ Helm deployment timed out after 600s!"
+  else
+    echo "❌ Helm deployment failed with exit code $HELM_EXIT_CODE!"
+  fi
   echo ""
   echo "Checking deployment status..."
-  helm status darwin -n darwin || true
+  helm status darwin -n darwin 2>/dev/null || echo "   (helm release not found)"
   echo ""
   echo "Checking pods..."
-  kubectl get pods -n darwin || true
+  kubectl get pods -n darwin 2>/dev/null || echo "   (no pods found)"
+  echo ""
+  echo "Checking helm release history..."
+  helm history darwin -n darwin 2>/dev/null || echo "   (no history found)"
   exit 1
 fi
 
 echo "✅ Helm chart deployed, waiting for critical pods to be ready..."
 
 # Wait for datastores first (MySQL is critical for workflow)
+# Use set +e to prevent script from exiting if wait fails
+set +e
 echo "   Waiting for MySQL to be ready..."
-if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mysql -n darwin --timeout=300s 2>/dev/null; then
+kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mysql -n darwin --timeout=300s 2>/dev/null
+MYSQL_WAIT_CODE=$?
+if [ $MYSQL_WAIT_CODE -eq 0 ]; then
   echo "   ✅ MySQL is ready"
 else
-  echo "   ⚠️  MySQL not ready yet, continuing..."
+  echo "   ⚠️  MySQL not ready yet (wait returned $MYSQL_WAIT_CODE), continuing..."
+  kubectl get pods -n darwin -l app.kubernetes.io/name=mysql 2>/dev/null || true
 fi
+set -e
 
 # Wait for airflow if enabled (it's a dependency for workflow)
 AIRFLOW_ENABLED=$(yq eval '.datastores.airflow.enabled // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
 if [ "$AIRFLOW_ENABLED" = "true" ]; then
+  set +e
   echo "   Waiting for Airflow webserver to be ready..."
   # Try multiple label selectors - airflow pods may use different labels
-  if kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=darwin-airflow-webserver -n darwin --timeout=300s 2>/dev/null || \
-     kubectl wait --for=condition=ready pod -l component=webserver -n darwin --timeout=300s 2>/dev/null || \
-     kubectl wait --for=condition=ready pod --field-selector metadata.name=darwin-airflow-webserver -n darwin --timeout=300s 2>/dev/null; then
+  kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=darwin-airflow-webserver -n darwin --timeout=120s 2>/dev/null || \
+  kubectl wait --for=condition=ready pod -l component=webserver -n darwin --timeout=120s 2>/dev/null || \
+  kubectl wait --for=condition=ready pod --field-selector metadata.name=darwin-airflow-webserver -n darwin --timeout=120s 2>/dev/null
+  AIRFLOW_WAIT_CODE=$?
+  if [ $AIRFLOW_WAIT_CODE -eq 0 ]; then
     echo "   ✅ Airflow webserver is ready"
   else
-    echo "   ⚠️  Airflow webserver not ready yet, continuing..."
+    echo "   ⚠️  Airflow webserver not ready yet (wait returned $AIRFLOW_WAIT_CODE), continuing..."
     echo "   Checking airflow pods..."
-    kubectl get pods -n darwin | grep airflow || true
+    kubectl get pods -n darwin 2>/dev/null | grep airflow || true
   fi
+  set -e
 fi
 
 # Wait for darwin-workflow pod if enabled
 WORKFLOW_ENABLED=$(yq eval '.applications.darwin-workflow // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
 if [ "$WORKFLOW_ENABLED" = "true" ]; then
+  set +e
   echo "   Waiting for darwin-workflow to be ready..."
   # Try multiple label selectors as the exact label may vary
-  if kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=workflow -n darwin --timeout=300s 2>/dev/null || \
-     kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=darwin-workflow -n darwin --timeout=300s 2>/dev/null || \
-     kubectl wait --for=condition=ready pod -l component-name=darwin-workflow -n darwin --timeout=300s 2>/dev/null; then
+  kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=workflow -n darwin --timeout=180s 2>/dev/null || \
+  kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=darwin-workflow -n darwin --timeout=180s 2>/dev/null || \
+  kubectl wait --for=condition=ready pod -l component-name=darwin-workflow -n darwin --timeout=180s 2>/dev/null
+  WORKFLOW_WAIT_CODE=$?
+  if [ $WORKFLOW_WAIT_CODE -eq 0 ]; then
     echo "   ✅ darwin-workflow is ready"
   else
-    echo "   ⚠️  darwin-workflow not ready yet, but deployment completed"
+    echo "   ⚠️  darwin-workflow not ready yet (wait returned $WORKFLOW_WAIT_CODE), but deployment completed"
     echo "   Checking pod status..."
-    kubectl get pods -n darwin | grep workflow || true
+    kubectl get pods -n darwin 2>/dev/null | grep workflow || true
   fi
+  set -e
 fi
 
 echo "✅ Deployment completed!"
@@ -228,7 +255,9 @@ if [ "$SDK_ENABLED" = "true" ] && [ "$COMPUTE_ENABLED" = "true" ]; then
   sleep 5
   
   # Register the runtime via ingress (localhost/compute)
-  RESPONSE=$(curl -s -X POST http://localhost/compute/runtime/v2/create \
+  # Add timeout to prevent hanging in CI
+  set +e
+  RESPONSE=$(curl -s --max-time 30 -X POST http://localhost/compute/runtime/v2/create \
     -H "Content-Type: application/json" \
     -d '{
       "runtime": "1.0",
@@ -238,13 +267,17 @@ if [ "$SDK_ENABLED" = "true" ] && [ "$COMPUTE_ENABLED" = "true" ]; then
       "user": "Darwin",
       "spark_connect": false,
       "spark_auto_init": true
-    }')
+    }' 2>&1)
+  CURL_EXIT_CODE=$?
+  set -e
   
   # Check response
-  if echo "$RESPONSE" | grep -q '"status":"SUCCESS"'; then
+  if [ $CURL_EXIT_CODE -eq 0 ] && echo "$RESPONSE" | grep -q '"status":"SUCCESS"'; then
     echo "   ✅ Darwin SDK runtime '1.0' registered successfully"
   else
-    echo "   ⚠️  Runtime registration response: $RESPONSE"
+    echo "   ⚠️  Runtime registration failed or incomplete (curl exit: $CURL_EXIT_CODE)"
+    echo "   ⚠️  Response: $RESPONSE"
+    echo "   ⚠️  This is non-critical, continuing..."
   fi
 elif [ "$SDK_ENABLED" != "true" ]; then
   echo "⏭️  Skipping darwin-sdk runtime registration (darwin-sdk-runtime disabled)"

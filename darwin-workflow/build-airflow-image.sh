@@ -6,6 +6,8 @@ echo "Building Darwin Airflow Image"
 echo "=========================================="
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CONFIG_ENV="$PROJECT_ROOT/config.env"
 WORKFLOW_DIR="${SCRIPT_DIR}"
 AIRFLOW_DIR="${WORKFLOW_DIR}/airflow"
 
@@ -38,12 +40,13 @@ echo ""
 
 # Read DOCKER_REGISTRY from config.env (set by start-cluster.sh)
 # The registry port is dynamically assigned, so we need to read it from config.env
-if [ -f "../../config.env" ]; then
-    source ../../config.env
-elif [ -f "../config.env" ]; then
-    source ../config.env
-elif [ -f "config.env" ]; then
-    source config.env
+if [ ! -f "$CONFIG_ENV" ]; then
+    echo "⚠️  Warning: config.env not found at $CONFIG_ENV"
+    echo "   Using default DOCKER_REGISTRY=localhost:55000"
+else
+    set -o allexport
+    . "$CONFIG_ENV"
+    set +o allexport
 fi
 
 # Use DOCKER_REGISTRY from config.env if available, otherwise default to localhost:55000

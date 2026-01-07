@@ -144,26 +144,18 @@ echo ""
 echo "📦 Installing Darwin Platform with configuration overrides..."
 
 # Install Darwin Platform umbrella chart with overrides
-# Omit --wait flag to avoid hanging on resource constraints, then manually wait for critical pods
-# This prevents runner timeouts in CI environments
-echo "   Deploying helm chart (without --wait to avoid timeouts)..."
-echo "   This may take a few minutes..."
-set +e  # Temporarily disable exit on error for helm command
-# Use timeout command as an extra safety net (600s = 10 minutes max)
-timeout 600s helm upgrade --install darwin ./helm/darwin \
+echo "   Deploying helm chart (with --wait for all pods)..."
+echo "   This may take several minutes..."
+helm upgrade --install darwin ./helm/darwin \
   --namespace darwin \
   --create-namespace \
-  --timeout 300s \
+  --wait \
+  --timeout 600s \
   $HELM_OVERRIDES
 HELM_EXIT_CODE=$?
-set -e  # Re-enable exit on error
 
 if [ $HELM_EXIT_CODE -ne 0 ]; then
-  if [ $HELM_EXIT_CODE -eq 124 ]; then
-    echo "❌ Helm deployment timed out after 600s!"
-  else
-    echo "❌ Helm deployment failed with exit code $HELM_EXIT_CODE!"
-  fi
+  echo "❌ Helm deployment failed with exit code $HELM_EXIT_CODE!"
   echo ""
   echo "Checking deployment status..."
   helm status darwin -n darwin 2>/dev/null || echo "   (helm release not found)"
@@ -176,61 +168,7 @@ if [ $HELM_EXIT_CODE -ne 0 ]; then
   exit 1
 fi
 
-echo "✅ Helm chart deployed, waiting for critical pods to be ready..."
-
-# Wait for datastores first (MySQL is critical for workflow)
-# Use set +e to prevent script from exiting if wait fails
-set +e
-echo "   Waiting for MySQL to be ready..."
-kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=mysql -n darwin --timeout=300s 2>/dev/null
-MYSQL_WAIT_CODE=$?
-if [ $MYSQL_WAIT_CODE -eq 0 ]; then
-  echo "   ✅ MySQL is ready"
-else
-  echo "   ⚠️  MySQL not ready yet (wait returned $MYSQL_WAIT_CODE), continuing..."
-  kubectl get pods -n darwin -l app.kubernetes.io/name=mysql 2>/dev/null || true
-fi
-set -e
-
-# Wait for airflow if enabled (it's a dependency for workflow)
-AIRFLOW_ENABLED=$(yq eval '.datastores.airflow.enabled // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
-if [ "$AIRFLOW_ENABLED" = "true" ]; then
-  set +e
-  echo "   Waiting for Airflow webserver to be ready..."
-  # Try multiple label selectors - airflow pods may use different labels
-  kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=darwin-airflow-webserver -n darwin --timeout=120s 2>/dev/null || \
-  kubectl wait --for=condition=ready pod -l component=webserver -n darwin --timeout=120s 2>/dev/null || \
-  kubectl wait --for=condition=ready pod --field-selector metadata.name=darwin-airflow-webserver -n darwin --timeout=120s 2>/dev/null
-  AIRFLOW_WAIT_CODE=$?
-  if [ $AIRFLOW_WAIT_CODE -eq 0 ]; then
-    echo "   ✅ Airflow webserver is ready"
-  else
-    echo "   ⚠️  Airflow webserver not ready yet (wait returned $AIRFLOW_WAIT_CODE), continuing..."
-    echo "   Checking airflow pods..."
-    kubectl get pods -n darwin 2>/dev/null | grep airflow || true
-  fi
-  set -e
-fi
-
-# Wait for darwin-workflow pod if enabled
-WORKFLOW_ENABLED=$(yq eval '.applications.darwin-workflow // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
-if [ "$WORKFLOW_ENABLED" = "true" ]; then
-  set +e
-  echo "   Waiting for darwin-workflow to be ready..."
-  # Try multiple label selectors as the exact label may vary
-  kubectl wait --for=condition=ready pod -l app.kubernetes.io/component=workflow -n darwin --timeout=180s 2>/dev/null || \
-  kubectl wait --for=condition=ready pod -l app.kubernetes.io/name=darwin-workflow -n darwin --timeout=180s 2>/dev/null || \
-  kubectl wait --for=condition=ready pod -l component-name=darwin-workflow -n darwin --timeout=180s 2>/dev/null
-  WORKFLOW_WAIT_CODE=$?
-  if [ $WORKFLOW_WAIT_CODE -eq 0 ]; then
-    echo "   ✅ darwin-workflow is ready"
-  else
-    echo "   ⚠️  darwin-workflow not ready yet (wait returned $WORKFLOW_WAIT_CODE), but deployment completed"
-    echo "   Checking pod status..."
-    kubectl get pods -n darwin 2>/dev/null | grep workflow || true
-  fi
-  set -e
-fi
+echo "✅ Helm chart deployed (all pods ready via --wait)"
 
 echo "✅ Deployment completed!"
 

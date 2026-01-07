@@ -17,6 +17,8 @@ jobs:
     defaults:
       run:
         working-directory: .
+    env:
+      KUBECONFIG: ./kind/config/kindkubeconfig.yaml
 
     steps:
       - name: Runner identity (debug)
@@ -174,10 +176,9 @@ jobs:
       - name: Verify cluster is ready
         run: |
           echo "🔍 Verifying cluster status..."
-          export KUBECONFIG=./kind/config/kindkubeconfig.yaml
           
           if [ ! -f "$KUBECONFIG" ]; then
-            echo "❌ KUBECONFIG not found, cluster may not be ready"
+            echo "❌ KUBECONFIG not found at $KUBECONFIG, cluster may not be ready"
             exit 1
           fi
           
@@ -202,33 +203,8 @@ jobs:
       - name: Step 3 - Deploy to Kubernetes (start.sh)
         run: |
           echo "🚀 Step 3: Running start.sh to deploy to Kubernetes..."
-          export KUBECONFIG=./kind/config/kindkubeconfig.yaml
           
-          # Verify config.env exists before running start.sh
-          echo "🔍 Pre-flight checks..."
-          echo "Current directory: $(pwd)"
-          echo "Checking for config.env..."
-          if [ -f config.env ]; then
-            echo "✅ config.env exists at: $(realpath config.env)"
-            echo "Contents:"
-            cat config.env
-          else
-            echo "❌ config.env not found in current directory!"
-            echo "Searching for config.env..."
-            find . -name "config.env" -type f 2>/dev/null | head -5 || echo "Not found anywhere"
-            exit 1
-          fi
-          
-          # Verify cluster is accessible before deployment
-          echo "🔍 Verifying cluster connectivity..."
-          if ! kubectl get nodes >/dev/null 2>&1; then
-            echo "❌ Cluster is not accessible"
-            exit 1
-          fi
-          
-          # Run start.sh - it will handle config.env sourcing internally
-          # start.sh now uses absolute paths and will provide clear error if config.env is missing
-          echo "📋 Running start.sh..."
+          echo "📋 Running start.sh (it will source config.env automatically)..."
           
           # Start a background process to periodically show status and keep runner alive
           (
@@ -309,7 +285,6 @@ jobs:
       - name: Wait for darwin-workflow pod to be ready
         run: |
           echo "⏳ Waiting for darwin-workflow pod to be ready..."
-          export KUBECONFIG=./kind/config/kindkubeconfig.yaml
           
           # Try to find the pod using multiple label selectors
           # The pod is labeled with app.kubernetes.io/component=workflow, not app.kubernetes.io/name=darwin-workflow
@@ -400,7 +375,6 @@ jobs:
       - name: Verify Services Are Healthy (as per root README)
         run: |
           echo "✅ Verifying services are healthy (as per root README)..."
-          export KUBECONFIG=./kind/config/kindkubeconfig.yaml
           
           # Check all pods are running (as per README: kubectl get pods -n darwin)
           echo "📦 Checking all pods are running:"
@@ -511,7 +485,6 @@ jobs:
         if: always()
         run: |
           echo "🧹 Cleaning up..."
-          export KUBECONFIG=./kind/config/kindkubeconfig.yaml || true
           
           # Clean up Docker to free space (important for GitHub Actions runners)
           echo "Cleaning up Docker resources..."

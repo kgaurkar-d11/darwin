@@ -2,6 +2,11 @@
 
 set -e # For enabling Exit on error
 
+# Get project root directory (consistent with other scripts)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+KUBECONFIG_SOURCE="$PROJECT_ROOT/kind/config/kindkubeconfig.yaml"
+
 cp -rf ./app ./target/darwin-cluster-manager/app
 cp -rf ./charts ./target/darwin-cluster-manager/charts
 cp -rf ./constants ./target/darwin-cluster-manager/constants
@@ -16,23 +21,10 @@ cp -rf ./main.go ./target/darwin-cluster-manager/main.go
 
 # Copy the kind kubeconfig file to the target directory
 mkdir -p ./target/darwin-cluster-manager/configs
-# Path from darwin-cluster-manager/.odin/darwin-cluster-manager/ to root kind/config/
-# Try multiple possible paths to handle different execution contexts
-KUBECONFIG_SOURCE=""
-if [ -f "../../kind/config/kindkubeconfig.yaml" ]; then
-    KUBECONFIG_SOURCE="../../kind/config/kindkubeconfig.yaml"
-elif [ -f "../../../kind/config/kindkubeconfig.yaml" ]; then
-    KUBECONFIG_SOURCE="../../../kind/config/kindkubeconfig.yaml"
-elif [ -f "../kind/config/kindkubeconfig.yaml" ]; then
-    KUBECONFIG_SOURCE="../kind/config/kindkubeconfig.yaml"
-elif [ -f "$(pwd)/../../kind/config/kindkubeconfig.yaml" ]; then
-    KUBECONFIG_SOURCE="$(pwd)/../../kind/config/kindkubeconfig.yaml"
-fi
-
-if [ -n "$KUBECONFIG_SOURCE" ] && [ -f "$KUBECONFIG_SOURCE" ]; then
+if [ -f "$KUBECONFIG_SOURCE" ]; then
     cp "$KUBECONFIG_SOURCE" ./target/darwin-cluster-manager/configs/kind
 else
-    echo "⚠️  Warning: kindkubeconfig.yaml not found. Skipping kubeconfig copy."
+    echo "⚠️  Warning: kindkubeconfig.yaml not found at $KUBECONFIG_SOURCE"
     echo "   This may be expected if running outside of a Kind cluster setup"
     # Create an empty file to prevent sed from failing
     touch ./target/darwin-cluster-manager/configs/kind

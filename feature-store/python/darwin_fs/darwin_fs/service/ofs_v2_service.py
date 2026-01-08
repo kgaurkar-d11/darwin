@@ -1,6 +1,9 @@
 import requests
 from typing import Dict, Any, List, Optional
 
+# TODO: No retry logic for HTTP requests - transient network errors will fail immediately.
+# TODO: No timeout configuration - long-running requests can hang indefinitely.
+# TODO: read_features uses GET with JSON body - non-standard, consider POST for consistency.
 from darwin_fs.config import *
 from darwin_fs.model.data_response import DataResponse
 from darwin_fs.model.read_features_request import ReadFeaturesRequest

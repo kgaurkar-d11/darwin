@@ -18,6 +18,7 @@ Darwin CLI provides a single entry point to interact with all Darwin ML Platform
   - [MLflow](#mlflow-commands)
   - [Feature Store](#feature-store-commands)
   - [Catalog](#catalog-commands)
+  - [Workflow](#workflow-commands)
 
 ---
 
@@ -570,6 +571,99 @@ Discover and manage data assets, lineage, and quality rules.
 
 ---
 
+## Workflow Commands
+
+Orchestrate and manage ML workflows and pipelines.
+
+### Workflow Operations
+
+| Command | Description | Example                                                                          |
+|---------|-------------|----------------------------------------------------------------------------------|
+| `workflow create` | Create workflow from YAML | `darwin workflow create --file examples/workflow/workflow-config.yaml`           |
+| `workflow update` | Update workflow from YAML | `darwin workflow update --file examples/workflow/workflow-config.yaml`           |
+| `workflow list` | List all workflows | `darwin workflow list`                                                           |
+| `workflow get` | Get workflow by ID or name | `darwin workflow get --name my-workflow`                                         |
+| `workflow delete` | Delete a workflow | `darwin workflow delete --workflow-id wf_id-abc123`                              |
+| `workflow trigger` | Trigger workflow run | `darwin workflow trigger --workflow-id wf_id-abc123`                             |
+| `workflow run-with-params` | Run with parameters | `darwin workflow run-with-params --name my-workflow --params '{"key": "value"}'` |
+| `workflow pause` | Pause a workflow | `darwin workflow pause --workflow-id wf_id-abc123`                               |
+| `workflow resume` | Resume a workflow | `darwin workflow resume --workflow-id wf_id-abc123`                              |
+
+#### Create Workflow
+
+```bash
+darwin workflow create \
+  --file examples/workflow/workflow-config.yaml \
+  --created-by user@example.com
+```
+
+#### Trigger Workflow with Parameters
+
+```bash
+darwin workflow trigger \
+  --workflow-id wf_id-abc123 \
+  --params '{"input_date": "2024-01-01", "mode": "full"}' \
+  --user user@example.com
+```
+
+### Workflow Run Operations
+
+| Command | Description | Example |
+|---------|-------------|---------|
+| `workflow run list` | List runs for workflow | `darwin workflow run list --workflow-id wf_id-abc123` |
+| `workflow run get` | Get run details | `darwin workflow run get --workflow-id wf_id-abc123 --run-id run-xyz` |
+| `workflow run status` | Get run status | `darwin workflow run status --workflow-id wf_id-abc123` |
+| `workflow run stop` | Stop a running workflow | `darwin workflow run stop --run-id run-xyz --workflow-id wf_id-abc123` |
+| `workflow run task` | Get task details | `darwin workflow run task --workflow-id wf_id-abc123 --run-id run-xyz --task-id task-1` |
+| `workflow run repair` | Retry failed tasks | `darwin workflow run repair --workflow-id wf_id-abc123 --run-id run-xyz --tasks task1,task2` |
+
+### Job Cluster Operations
+
+| Command | Description | Example                                                                                                    |
+|---------|-------------|------------------------------------------------------------------------------------------------------------|
+| `workflow job-cluster list` | List job clusters | `darwin workflow job-cluster list`                                                                         |
+| `workflow job-cluster get` | Get job cluster details | `darwin workflow job-cluster get --job-cluster-id job-abc123`                                              |
+| `workflow job-cluster create` | Create job cluster | `darwin workflow job-cluster create --file examples/workflow/job-cluster.yaml`                             |
+| `workflow job-cluster update` | Update job cluster | `darwin workflow job-cluster update --job-cluster-id job-abc123 --file examples/workflow/job-cluster.yaml` |
+
+#### Create Job Cluster
+
+```bash
+darwin workflow job-cluster create \
+  --file examples/workflow/job-cluster.yaml
+```
+
+**Job Cluster YAML Format:**
+
+```yaml
+cluster_name: my-job-cluster
+runtime: spark-conect-verf4
+tags:
+  - ml-training
+  - production
+terminate_after_minutes: 60
+head_node:
+  cores: 4
+  memory: 16
+  node_capacity_type: ondemand
+worker_group:
+  - cores_per_pods: 4
+    memory_per_pods: 16
+    min_pods: 1
+    max_pods: 3
+    node_capacity_type: spot
+advance_config:
+  spark_config:
+    spark.executor.memory: "4g"
+  init_script: "pip install pandas numpy"
+  instance_role:
+    id: "1"
+    display_name: darwin-ds-role
+user: user@example.com
+```
+
+---
+
 ## Global Options
 
 All commands support these common options:
@@ -607,9 +701,12 @@ examples/
 │   ├── tenant-config.yaml
 │   ├── tenant-update.yaml
 │   └── write-features.yaml
-└── serve/
-    ├── deploy_artifact.yaml
-    └── infra_config.yaml
+├── serve/
+│   ├── deploy_artifact.yaml
+│   └── infra_config.yaml
+└── workflow/
+    ├── workflow-config.yaml
+    └── job-cluster.yaml
 ```
 
 ---

@@ -10,44 +10,6 @@ if [ ! -f "$ENABLED_SERVICES_FILE" ]; then
 fi
 echo "✅ Found configuration: $ENABLED_SERVICES_FILE"
 
-# ============================================================================
-# CLI TOOLS SETUP
-# ============================================================================
-# Check if darwin-cli is enabled and install if needed
-DARWIN_CLI_ENABLED=$(yq eval '.cli-tools.darwin-cli // false' "$ENABLED_SERVICES_FILE" 2>/dev/null || echo "false")
-
-if [ "$DARWIN_CLI_ENABLED" = "true" ]; then
-  echo ""
-  echo "📦 Setting up darwin-cli..."
-  
-  DARWIN_CLI_PATH="darwin-cli"
-  if [ ! -d "$DARWIN_CLI_PATH" ]; then
-    echo "   ⚠️  darwin-cli directory not found at $DARWIN_CLI_PATH, skipping..."
-  else
-    VENV_PATH=".venv"
-    
-    # Create venv if it doesn't exist
-    if [ ! -d "$VENV_PATH" ]; then
-      echo "   Creating virtual environment..."
-      python3.9 -m venv "$VENV_PATH"
-    fi
-
-    # Install darwin-cli
-    echo "   Installing darwin-cli package..."
-    (
-      source "$VENV_PATH/bin/activate" && cd "$DARWIN_CLI_PATH" && python setup.py sdist && pip install --upgrade pip && pip install dist/darwin-cli-1.0.0.tar.gz --force-reinstall
-    )
-
-    if [ $? -eq 0 ]; then
-      echo "   ✅ darwin-cli installed successfully"
-      echo "   To use: source $VENV_PATH/bin/activate && darwin --help"
-    else
-      echo "   ❌ Failed to install darwin-cli"
-    fi
-  fi
-  echo ""
-fi
-
 # Source the config.env file
 set -o allexport
 . config.env
@@ -189,10 +151,26 @@ DARWIN_CLI_ENABLED=$(yq eval '.cli-tools.darwin-cli // false' "$ENABLED_SERVICES
 if [ "$DARWIN_CLI_ENABLED" = "true" ]; then
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  echo "📦 To use darwin-cli, activate the virtual environment:"
+  echo "                       DARWIN CLI"
+  echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
   echo ""
-  echo "   source .venv/bin/activate"
-  echo "   darwin --help"
+  echo "  darwin-cli was installed during setup.sh"
+  echo ""
+  echo "  To activate and use darwin-cli:"
+  echo ""
+  echo "    1. Activate the virtual environment:"
+  echo "       source .venv/bin/activate"
+  echo ""
+  echo "    2. Configure the environment (first time only):"
+  echo "       darwin config set --env darwin-local"
+  echo ""
+  echo "    3. Verify installation:"
+  echo "       darwin --help"
+  echo ""
+  echo "  Example commands:"
+  echo "    darwin compute list"
+  echo "    darwin workflow list"
+  echo "    darwin serve list"
   echo ""
   echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 fi

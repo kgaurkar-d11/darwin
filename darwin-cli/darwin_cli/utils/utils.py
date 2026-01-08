@@ -167,3 +167,49 @@ def load_yaml_file(file_path: str) -> dict:
     except yaml.YAMLError as e:
         logger.error("Error parsing YAML file {}: {}", file_path, e)
         raise typer.Exit(1)
+
+
+def build_job_cluster_definition(config: dict):
+    """
+    Build a CreateJobClusterDefinitionRequest from a config dictionary (parsed from YAML).
+    """
+    from workflow_model.job_cluster import (
+        CreateJobClusterDefinitionRequest,
+        HeadNodeConfig,
+        WorkerNodeConfig,
+        AdvanceConfig,
+        AutoTerminationPolicy,
+    )
+    
+    # Build head node config
+    head_node = None
+    if "head_node" in config:
+        head_node = HeadNodeConfig(**config["head_node"])
+    
+    # Build worker node configs
+    worker_configs = []
+    for wg in config.get("worker_group", []):
+        worker_configs.append(WorkerNodeConfig(**wg))
+    
+    # Build advance config
+    advance_cfg = None
+    if "advance_config" in config:
+        advance_cfg = AdvanceConfig(**config["advance_config"])
+    
+    # Build auto termination policies
+    auto_term = []
+    for policy in config.get("auto_termination_policies", []):
+        auto_term.append(AutoTerminationPolicy(**policy))
+    
+    # Build the job cluster definition request
+    return CreateJobClusterDefinitionRequest(
+        cluster_name=config["cluster_name"],
+        runtime=config["runtime"],
+        tags=config.get("tags", []),
+        inactive_time=config.get("terminate_after_minutes", -1),
+        auto_termination_policies=auto_term,
+        head_node_config=head_node,
+        worker_node_configs=worker_configs,
+        advance_config=advance_cfg,
+        user=config.get("user", "cli-user@darwin.local"),
+    )

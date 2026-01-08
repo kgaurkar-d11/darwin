@@ -66,6 +66,18 @@ def prepare_package():
         shutil.copytree(src_dir8, dest_dir8)
         dest_dirs.append(dest_dir8)
 
+    dest_dir9 = "darwin_workflow"
+    src_dir9 = "../darwin-workflow/sdk/src/darwin_workflow"
+    if not os.path.exists(dest_dir9):
+        shutil.copytree(src_dir9, dest_dir9)
+        dest_dirs.append(dest_dir9)
+
+    dest_dir10 = "workflow_model"
+    src_dir10 = "../darwin-workflow/model/src/workflow_model"
+    if not os.path.exists(dest_dir10):
+        shutil.copytree(src_dir10, dest_dir10)
+        dest_dirs.append(dest_dir10)
+
     return dest_dirs
 
 
@@ -99,6 +111,8 @@ if __name__ == "__main__":
                 "darwin_mlflow*",
                 "darwin_fs*",
                 "darwin_catalog*",
+                "darwin_workflow*",
+                "workflow_model*",
             ]
         ),
         package_dir={
@@ -110,6 +124,8 @@ if __name__ == "__main__":
             "darwin_mlflow": "darwin_mlflow",
             "darwin_fs": "darwin_fs",
             "darwin_catalog": "darwin_catalog",
+            "darwin_workflow": "darwin_workflow",
+            "workflow_model": "workflow_model",
         },
     python_requires=">=3.9.7",
     install_requires=[
@@ -128,6 +144,8 @@ if __name__ == "__main__":
         "questionary>=1.13.0",
         "aiohttp >= 3.8.0",
         "mlflow>=2.12.0",
+        "shortuuid~=1.0.13",
+        "croniter~=6.0.0",
     ],
     extras_require={
         "dev": [
@@ -153,6 +171,8 @@ if __name__ == "__main__":
             "hermes": ["src/templates/*", "src/templates/**"],
             "darwin_fs": ["py.typed"],
             "darwin_catalog": ["py.typed"],
+            "darwin_workflow": ["py.typed", "constant/*.conf"],
+            "workflow_model": ["py.typed"],
         },
     zip_safe=False,
     classifiers=[

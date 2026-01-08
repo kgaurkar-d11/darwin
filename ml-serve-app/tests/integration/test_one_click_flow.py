@@ -84,7 +84,7 @@ class TestOneClickDeploymentFlow:
         
         if deployment_succeeded:
             # Step 2: Wait for pod to be ready
-            pod_ready = wait_for_pod_ready(
+            pod_ready = await wait_for_pod_ready(
                 pod_name_prefix=serve_name,
                 namespace="serve",
                 max_attempts=30,
@@ -281,7 +281,7 @@ class TestOneClickDeploymentWithRealModel:
         
         # If not already deployed, wait for pods
         if not already_deployed:
-            pod_ready = wait_for_pod_ready(
+            pod_ready = await wait_for_pod_ready(
                 pod_name_prefix=serve_name,
                 namespace="serve",
                 max_attempts=60,

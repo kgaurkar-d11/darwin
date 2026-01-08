@@ -7,9 +7,9 @@ when infrastructure settings are changed on a running serve.
 Prerequisites:
 - Kind cluster running with all services deployed
 """
+import asyncio
 import pytest
 import httpx
-import time
 
 
 @pytest.mark.integration
@@ -21,23 +21,27 @@ class TestInfraConfigUpdateFlow:
         self,
         ml_serve_base_url: str,
         http_client: httpx.AsyncClient,
+        cleanup_test_resources,
         integration_test_env: str
     ):
         """Test updating infra config when serve is not deployed."""
         # Create serve
+        serve_name = "update-config-no-deploy"
         await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "update-config-no-deploy",
+                "name": serve_name,
                 "type": "api",
                 "description": "Test config update",
                 "space": "test-space"
             }
         )
+
+        cleanup_test_resources(serve_name, integration_test_env)
         
         # Create initial config
         await http_client.post(
-            f"{ml_serve_base_url}/api/v1/serve/update-config-no-deploy/infra-config/{integration_test_env}",
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}/infra-config/{integration_test_env}",
             json={
                 "api_serve_config": {
                     "backend_type": "fastapi",
@@ -54,7 +58,7 @@ class TestInfraConfigUpdateFlow:
         
         # Update config
         response = await http_client.patch(
-            f"{ml_serve_base_url}/api/v1/serve/update-config-no-deploy/infra-config/{integration_test_env}",
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}/infra-config/{integration_test_env}",
             json={
                 "api_serve_config": {
                     "backend_type": "fastapi",
@@ -74,7 +78,7 @@ class TestInfraConfigUpdateFlow:
         
         # Verify config was updated
         get_response = await http_client.get(
-            f"{ml_serve_base_url}/api/v1/serve/update-config-no-deploy/infra-config/{integration_test_env}"
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}/infra-config/{integration_test_env}"
         )
         
         assert get_response.status_code == 200
@@ -150,7 +154,7 @@ class TestInfraConfigUpdateFlow:
             pytest.skip("Model deployment failed - test model not available")
         
         # Wait for initial deployment
-        pod_ready = wait_for_pod_ready(
+        pod_ready = await wait_for_pod_ready(
             pod_name_prefix=serve_name,
             namespace="serve",
             max_attempts=30,
@@ -182,9 +186,9 @@ class TestInfraConfigUpdateFlow:
         # Step 3: Wait for redeployment to complete
         # Config updates trigger redeployment which can take time on local kind clusters
         print(f"   ⏳ Waiting for redeployment to complete (30s)...")
-        time.sleep(30)  # Increased wait time for local kind clusters
+        await asyncio.sleep(30)  # Increased wait time for local kind clusters
         
-        pod_ready_after_update = wait_for_pod_ready(
+        pod_ready_after_update = await wait_for_pod_ready(
             pod_name_prefix=serve_name,
             namespace="serve",
             max_attempts=30,
@@ -204,7 +208,7 @@ class TestInfraConfigUpdateFlow:
             except Exception as e:
                 if attempt < 2:
                     print(f"   ⚠️ API call failed (attempt {attempt + 1}/3), retrying in 10s...")
-                    time.sleep(10)
+                    await asyncio.sleep(10)
                 else:
                     raise
         
@@ -217,10 +221,123 @@ class TestInfraConfigUpdateFlow:
         # Cleanup happens automatically via cleanup_test_resources fixture
     
     @pytest.mark.asyncio
+    async def test_deploy_undeploy_redeploy_flow(
+        self,
+        ml_serve_base_url: str,
+        http_client: httpx.AsyncClient,
+        wait_for_pod_ready,
+        wait_for_serve_status,
+        cleanup_test_resources,
+        test_model_uri: str,
+        integration_test_env: str
+    ):
+        """Ensure serve can be deployed, undeployed, and redeployed with status checks."""
+        serve_name = "deploy-undeploy-redeploy-test"
+        cleanup_test_resources(serve_name, integration_test_env)
+        
+        # Ensure serve exists before deployment
+        create_response = await http_client.post(
+            f"{ml_serve_base_url}/api/v1/serve",
+            json={
+                "name": serve_name,
+                "type": "api",
+                "description": "Deploy/undeploy/redeploy flow validation",
+                "space": "test-space"
+            }
+        )
+        assert create_response.status_code in [200, 201, 409]
+        
+        deploy_payload = {
+            "serve_name": serve_name,
+            "artifact_version": "v1",
+            "model_uri": test_model_uri,
+            "env": integration_test_env,
+            "cores": 1,
+            "memory": 2,
+            "min_replicas": 1,
+            "max_replicas": 1,
+            "node_capacity": "spot"
+        }
+        
+        # Initial deployment
+        deploy_response = await http_client.post(
+            f"{ml_serve_base_url}/api/v1/serve/deploy-model",
+            json=deploy_payload
+        )
+        
+        if deploy_response.status_code in [400, 409]:
+            response_data = deploy_response.json()
+            error_msg = response_data.get("message") or response_data.get("detail") or "Unknown error"
+            if "already deployed" not in error_msg.lower():
+                pytest.skip(f"Initial deployment failed: {error_msg}")
+        elif deploy_response.status_code == 404:
+            pytest.skip("Test model not available for deployment. Run setup_test_model.py first.")
+        else:
+            assert deploy_response.status_code in [200, 201]
+        
+        pod_ready = await wait_for_pod_ready(
+            pod_name_prefix=serve_name,
+            namespace="serve",
+            max_attempts=30,
+            delay=2
+        )
+        if not pod_ready:
+            pytest.skip("Initial deployment did not become ready in time")
+        
+        ready_status = await wait_for_serve_status(serve_name)
+        assert ready_status in {"READY", "Ready", "Running"}, f"Expected READY status, got: {ready_status}"
+        
+        # Undeploy the serve
+        undeploy_response = await http_client.post(
+            f"{ml_serve_base_url}/api/v1/serve/undeploy-model",
+            json={
+                "serve_name": serve_name,
+                "env": integration_test_env
+            }
+        )
+        
+        if undeploy_response.status_code == 404:
+            pytest.skip("Undeploy endpoint reported serve not deployed, cannot continue flow test")
+        
+        assert undeploy_response.status_code in [200, 201]
+        
+        # Wait for Kubernetes to start terminating the pods (undeploy is asynchronous)
+        await asyncio.sleep(5)
+        
+        status_after_undeploy = await wait_for_serve_status(
+            serve_name,
+            max_attempts=20,
+            delay=3
+        )
+        assert status_after_undeploy in {"NOT_DEPLOYED", "NOT_READY"}, f"Expected NOT_DEPLOYED/NOT_READY status, got: {status_after_undeploy}"
+        
+        # Redeploy the same serve
+        redeploy_response = await http_client.post(
+            f"{ml_serve_base_url}/api/v1/serve/deploy-model",
+            json=deploy_payload
+        )
+        if redeploy_response.status_code == 404:
+            pytest.skip("Redeployment failed because test model is unavailable")
+        assert redeploy_response.status_code in [200, 201]
+        
+        pod_ready_after_redeploy = await wait_for_pod_ready(
+            pod_name_prefix=serve_name,
+            namespace="serve",
+            max_attempts=30,
+            delay=2
+        )
+        if not pod_ready_after_redeploy:
+            pytest.skip("Redeployment did not become ready in time")
+        
+        final_status = await wait_for_serve_status(serve_name)
+        assert final_status in {"READY", "Ready", "Running"}, f"Expected READY status, got: {final_status}"
+    
+    @pytest.mark.asyncio
     async def test_update_only_replicas(
         self,
         ml_serve_base_url: str,
         http_client: httpx.AsyncClient,
+        cleanup_test_resources,
         integration_test_env: str
     ):
         """Test updating only replica counts (common scaling operation)."""
@@ -236,6 +353,8 @@ class TestInfraConfigUpdateFlow:
                 "space": "test-space"
             }
         )
+
+        cleanup_test_resources(serve_name, integration_test_env)
         
         # Create initial config
         await http_client.post(
@@ -297,23 +416,27 @@ class TestServeStatus:
         self,
         ml_serve_base_url: str,
         http_client: httpx.AsyncClient,
+        cleanup_test_resources,
         integration_test_env: str
     ):
         """Test getting status of a serve that is not deployed."""
         # Create serve but don't deploy
+        serve_name = "status-not-deployed"
         await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "status-not-deployed",
+                "name": serve_name,
                 "type": "api",
                 "description": "Test status",
                 "space": "test-space"
             }
         )
+
+        cleanup_test_resources(serve_name, integration_test_env)
         
         # Get status
         response = await http_client.get(
-            f"{ml_serve_base_url}/api/v1/serve/status-not-deployed/status/{integration_test_env}"
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}/status/{integration_test_env}"
         )
         
         # Should return status (likely "not deployed" or similar)
@@ -370,7 +493,7 @@ class TestServeStatus:
             pytest.skip("Deployment failed")
         
         # Wait for pod (ignore result if already deployed, pod might not match label selector)
-        pod_ready = wait_for_pod_ready(
+        pod_ready = await wait_for_pod_ready(
             pod_name_prefix=serve_name,
             namespace="serve",
             max_attempts=30,

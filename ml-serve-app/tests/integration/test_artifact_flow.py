@@ -24,18 +24,23 @@ class TestArtifactBuildFlow:
     async def test_create_serve(
         self,
         ml_serve_base_url: str,
-        http_client: httpx.AsyncClient
+        http_client: httpx.AsyncClient,
+        cleanup_test_resources,
+        integration_test_env: str
     ):
         """Test creating a serve via API."""
+        serve_name = "integration-artifact-serve"
         response = await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "integration-artifact-serve",
+                "name": serve_name,
                 "type": "api",
                 "description": "Integration test serve",
                 "space": "test-space"
             }
         )
+
+        cleanup_test_resources(serve_name, integration_test_env)
         
         # Allow 409 if already exists
         assert response.status_code in [200, 201, 409]
@@ -65,23 +70,28 @@ class TestArtifactBuildFlow:
     async def test_get_serve_overview(
         self,
         ml_serve_base_url: str,
-        http_client: httpx.AsyncClient
+        http_client: httpx.AsyncClient,
+        cleanup_test_resources,
+        integration_test_env: str
     ):
         """Test getting serve overview."""
         # First create a serve
+        serve_name = "integration-overview-serve"
         await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "integration-overview-serve",
+                "name": serve_name,
                 "type": "api",
                 "description": "Test serve for overview",
                 "space": "test-space"
             }
         )
+
+        cleanup_test_resources(serve_name, integration_test_env)
         
         # Get overview
         response = await http_client.get(
-            f"{ml_serve_base_url}/api/v1/serve/integration-overview-serve"
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}"
         )
         
         assert response.status_code == 200
@@ -158,23 +168,27 @@ class TestArtifactDeploymentFlow:
         self,
         ml_serve_base_url: str,
         http_client: httpx.AsyncClient,
+        cleanup_test_resources,
         integration_test_env: str
     ):
         """Test creating infrastructure configuration for a serve."""
         # Create serve
+        serve_name = "infra-config-test-serve"
         await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "infra-config-test-serve",
+                "name": serve_name,
                 "type": "api",
                 "description": "Test infra config",
                 "space": "test-space"
             }
         )
+
+        cleanup_test_resources(serve_name, integration_test_env)
         
         # Create infra config
         response = await http_client.post(
-            f"{ml_serve_base_url}/api/v1/serve/infra-config-test-serve/infra-config/{integration_test_env}",
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}/infra-config/{integration_test_env}",
             json={
                 "api_serve_config": {
                     "backend_type": "fastapi",
@@ -197,22 +211,26 @@ class TestArtifactDeploymentFlow:
         self,
         ml_serve_base_url: str,
         http_client: httpx.AsyncClient,
+        cleanup_test_resources,
         integration_test_env: str
     ):
         """Test retrieving infrastructure configuration."""
         # Create serve and config first
+        serve_name = "get-config-test-serve"
         await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "get-config-test-serve",
+                "name": serve_name,
                 "type": "api",
                 "description": "Test get config",
                 "space": "test-space"
             }
         )
+
+        cleanup_test_resources(serve_name, integration_test_env)
         
         await http_client.post(
-            f"{ml_serve_base_url}/api/v1/serve/get-config-test-serve/infra-config/{integration_test_env}",
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}/infra-config/{integration_test_env}",
             json={
                 "api_serve_config": {
                     "backend_type": "fastapi",
@@ -229,9 +247,8 @@ class TestArtifactDeploymentFlow:
         
         # Get config
         response = await http_client.get(
-            f"{ml_serve_base_url}/api/v1/serve/get-config-test-serve/infra-config/{integration_test_env}"
+            f"{ml_serve_base_url}/api/v1/serve/{serve_name}/infra-config/{integration_test_env}"
         )
-        
         assert response.status_code == 200
         data = response.json()
         
@@ -358,14 +375,17 @@ class TestServeManagement:
     async def test_create_duplicate_serve_fails(
         self,
         ml_serve_base_url: str,
-        http_client: httpx.AsyncClient
+        http_client: httpx.AsyncClient,
+        cleanup_test_resources,
+        integration_test_env: str
     ):
         """Test creating duplicate serve returns conflict."""
         # Create first serve
+        serve_name = "duplicate-test-serve"
         response1 = await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "duplicate-test-serve",
+                "name": serve_name,
                 "type": "api",
                 "description": "Test duplicate",
                 "space": "test-space"
@@ -376,7 +396,7 @@ class TestServeManagement:
         response2 = await http_client.post(
             f"{ml_serve_base_url}/api/v1/serve",
             json={
-                "name": "duplicate-test-serve",
+                "name": serve_name,
                 "type": "api",
                 "description": "Test duplicate",
                 "space": "test-space"
@@ -385,4 +405,6 @@ class TestServeManagement:
         
         # Second request should fail with conflict
         assert response2.status_code == 409
+
+        cleanup_test_resources(serve_name, integration_test_env)
 

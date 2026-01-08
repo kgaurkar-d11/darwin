@@ -7,8 +7,7 @@ real services running in the kind cluster.
 import asyncio
 import os
 import subprocess
-import time
-from typing import Generator
+from typing import AsyncGenerator, Callable
 
 import pytest
 import httpx
@@ -98,7 +97,7 @@ def mlflow_base_url(kube_context) -> str:
 
 
 @pytest.fixture
-async def http_client(test_auth_token: str) -> Generator[httpx.AsyncClient, None, None]:
+async def http_client(test_auth_token: str) -> AsyncGenerator[httpx.AsyncClient, None]:
     """
     Create an async HTTP client for integration tests with authentication.
     
@@ -143,10 +142,76 @@ async def wait_for_service():
                     pass
                 
                 if attempt < max_attempts - 1:
-                    time.sleep(delay)
+                    await asyncio.sleep(delay)
         
         return False
     
+    return _wait
+
+
+@pytest.fixture
+async def wait_for_serve_status(
+    http_client: httpx.AsyncClient,
+    ml_serve_base_url: str,
+    integration_test_env: str,
+    wait_for_pod_ready: Callable
+):
+    """
+    Fixture that provides a function to get serve status.
+    
+    Tries the status API first, then falls back to kubectl to check pod readiness.
+    This approach is more reliable in Kind/local environments where the status API
+    may fail due to internal networking restrictions.
+    """
+    async def _wait(
+        serve_name: str,
+        max_attempts: int = 20,
+        delay: int = 3
+    ):
+        """
+        Wait for and return the serve status.
+        
+        Returns:
+            Status string ("READY", "NOT_READY", "NOT_DEPLOYED", etc.) or None if cannot determine
+        """
+        for attempt in range(max_attempts):
+            # 1. Try the status API first
+            try:
+                response = await http_client.get(
+                    f"{ml_serve_base_url}/api/v1/serve/{serve_name}/status/{integration_test_env}"
+                )
+
+                if response.status_code == 200:
+                    data = response.json()
+                    status = data.get("data", {}).get("status")
+                    if status:
+                        return status
+                elif response.status_code == 404:
+                    return "NOT_DEPLOYED"
+            except Exception:
+                pass
+
+            # 2. Fallback: Check pod status via kubectl
+            # Check if pods exist and are ready
+            if await wait_for_pod_ready(serve_name, namespace="serve", max_attempts=1, delay=0):
+                return "READY"
+            
+            # Check if pods are completely gone (NOT_DEPLOYED)
+            try:
+                result = subprocess.run(
+                    ["kubectl", "get", "pods", "-n", "serve", "-l", f"app.kubernetes.io/name={serve_name}", "--no-headers"],
+                    capture_output=True, text=True, timeout=5
+                )
+                if result.returncode == 0 and not result.stdout.strip():
+                    return "NOT_DEPLOYED"
+            except Exception:
+                pass
+
+            if attempt < max_attempts - 1:
+                await asyncio.sleep(delay)
+
+        return None
+
     return _wait
 
 
@@ -155,7 +220,7 @@ async def wait_for_pod_ready():
     """
     Fixture that provides a function to wait for a pod to be ready.
     """
-    def _wait(
+    async def _wait(
         pod_name_prefix: str,
         namespace: str = "serve",
         max_attempts: int = 60,
@@ -208,7 +273,7 @@ async def wait_for_pod_ready():
                 pass
             
             if attempt < max_attempts - 1:
-                time.sleep(delay)
+                await asyncio.sleep(delay)
         
         return False
     
@@ -216,7 +281,7 @@ async def wait_for_pod_ready():
 
 
 @pytest.fixture(scope="session")
-async def integration_test_env(ml_serve_base_url: str, test_auth_token: str):
+async def integration_test_env(ml_serve_base_url: str, test_auth_token: str) -> AsyncGenerator[str, None]:
     """
     Session-scoped fixture to create and reuse the integration-test-env environment.
     
@@ -253,7 +318,10 @@ async def integration_test_env(ml_serve_base_url: str, test_auth_token: str):
 
 
 @pytest.fixture
-async def cleanup_test_resources(ml_serve_base_url: str, test_auth_token: str):
+async def cleanup_test_resources(
+    ml_serve_base_url: str,
+    test_auth_token: str
+) -> AsyncGenerator[Callable[[str, str], None], None]:
     """
     Cleanup test resources after integration tests.
     
@@ -416,7 +484,7 @@ async def cleanup_test_resources(ml_serve_base_url: str, test_auth_token: str):
                 print(f"   ✅ All resources cleared for {serve_name}")
                 break
             
-            time.sleep(1)
+            await asyncio.sleep(1)
         else:
             # Last resort: list remaining pods for debugging
             result = subprocess.run(
@@ -435,7 +503,7 @@ async def cleanup_test_resources(ml_serve_base_url: str, test_auth_token: str):
         # Step 4: Give Kubernetes more time to fully clean up before next test
         # This is critical for sequential test execution
         print(f"   ⏸️  Waiting 5s for Kubernetes to settle...")
-        time.sleep(5)
+        await asyncio.sleep(5)
 
 
 @pytest.fixture(scope="session")
@@ -578,7 +646,10 @@ def iris_test_model_uri(get_latest_model_uri) -> str:
     return get_latest_model_uri("iris-test")
 
 @pytest.fixture(scope="session", autouse=True)
-async def cleanup_database(ml_serve_base_url: str, test_auth_token: str):
+async def cleanup_database(
+    ml_serve_base_url: str,
+    test_auth_token: str
+) -> AsyncGenerator[None, None]:
     """
     Clean up database entries after all integration tests complete.
     

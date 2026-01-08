@@ -15,6 +15,79 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 
 
+def _log_model_to_mlflow(
+    model_name: str,
+    run_name: str,
+    model,
+    accuracy: float,
+    python_full_version: str,
+    conda_python: str,
+    verbose: bool,
+) -> str | None:
+    """
+    Log a trained model to MLflow with the shared artifact layout.
+    Returns the logged model URI on success, otherwise None.
+    """
+    try:
+        with mlflow.start_run(run_name=run_name) as run:
+            mlflow.log_param("n_estimators", 10)
+            mlflow.log_metric("accuracy", accuracy)
+
+            with tempfile.TemporaryDirectory() as tmpdir:
+                model_dir = os.path.join(tmpdir, "model")
+                os.makedirs(model_dir)
+
+                model_path = os.path.join(model_dir, "model.pkl")
+                with open(model_path, "wb") as f:
+                    pickle.dump(model, f)
+
+                mlmodel_content = {
+                    "artifact_path": "model",
+                    "flavors": {
+                        "python_function": {
+                            "model_path": "model.pkl",
+                            "loader_module": "mlflow.sklearn",
+                            "python_version": python_full_version,
+                            "env": "conda.yaml",
+                        },
+                        "sklearn": {
+                            "pickled_model": "model.pkl",
+                            "serialization_format": "cloudpickle",
+                            "sklearn_version": "1.3.2",
+                        },
+                    },
+                    "model_uuid": run.info.run_id,
+                    "utc_time_created": "2025-01-01 00:00:00.000000",
+                }
+
+                with open(os.path.join(model_dir, "MLmodel"), "w") as f:
+                    yaml.dump(mlmodel_content, f)
+
+                conda_content = {
+                    "name": "mlflow-env",
+                    "channels": ["defaults"],
+                    "dependencies": [
+                        f"python={conda_python}",
+                        "pip",
+                        {"pip": ["scikit-learn==1.3.2", "mlflow"]},
+                    ],
+                }
+                with open(os.path.join(model_dir, "conda.yaml"), "w") as f:
+                    yaml.dump(conda_content, f)
+
+                mlflow.log_artifacts(model_dir, "model")
+
+            uri = f"runs:/{run.info.run_id}/model"
+            if verbose:
+                print(f"✅ Model logged for {model_name}: {uri}")
+            return uri
+    except Exception as e:
+        if verbose:
+            print(f"⚠️  Could not log {model_name}: {e}")
+        return None
+
+
+
 def setup_mlflow_test_models(mlflow_uri: str = None, verbose: bool = True) -> bool:
     """
     Setup MLflow test models for integration tests.
@@ -34,6 +107,9 @@ def setup_mlflow_test_models(mlflow_uri: str = None, verbose: bool = True) -> bo
     
     if verbose:
         print(f"📊 Using MLflow at: {mlflow_uri}")
+
+    python_full_version = ".".join(str(x) for x in sys.version_info[:3])
+    conda_python = f"{sys.version_info.major}.{sys.version_info.minor}"
 
     try:
         # Load iris dataset
@@ -72,124 +148,22 @@ def setup_mlflow_test_models(mlflow_uri: str = None, verbose: bool = True) -> bo
             print("\n📦 Logging models to MLflow...")
         
         logged_models = {}
-        
-        # Log model for iris-test
-        try:
-            with mlflow.start_run(run_name="iris-test-model") as run:
-                mlflow.log_param("n_estimators", 10)
-                mlflow.log_metric("accuracy", accuracy)
-                
-                # Save model with proper MLflow structure using pyfunc
-                
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    model_dir = os.path.join(tmpdir, "model")
-                    os.makedirs(model_dir)
-                    
-                    # Save the pickled model
-                    model_path = os.path.join(model_dir, "model.pkl")
-                    with open(model_path, "wb") as f:
-                        pickle.dump(model, f)
-                    
-                    # Create MLmodel file
-                    mlmodel_content = {
-                        "artifact_path": "model",
-                        "flavors": {
-                            "python_function": {
-                                "model_path": "model.pkl",
-                                "loader_module": "mlflow.sklearn",
-                                "python_version": "3.13.3",
-                                "env": "conda.yaml"
-                            },
-                            "sklearn": {
-                                "pickled_model": "model.pkl",
-                                "serialization_format": "cloudpickle",
-                                "sklearn_version": "1.3.2"
-                            }
-                        },
-                        "model_uuid": run.info.run_id,
-                        "utc_time_created": "2025-01-01 00:00:00.000000"
-                    }
-                    
-                    with open(os.path.join(model_dir, "MLmodel"), "w") as f:
-                        yaml.dump(mlmodel_content, f)
-                    
-                    # Create minimal conda.yaml
-                    conda_content = {
-                        "name": "mlflow-env",
-                        "channels": ["defaults"],
-                        "dependencies": ["python=3.13", "pip", {"pip": ["scikit-learn==1.3.2", "mlflow"]}]
-                    }
-                    with open(os.path.join(model_dir, "conda.yaml"), "w") as f:
-                        yaml.dump(conda_content, f)
-                    
-                    # Log the entire model directory
-                    mlflow.log_artifacts(model_dir, "model")
-                
-                logged_models["iris-test"] = f"runs:/{run.info.run_id}/model"
-                if verbose:
-                    print(f"✅ Model logged for iris-test: runs:/{run.info.run_id}/model")
-        except Exception as e:
-            if verbose:
-                print(f"⚠️  Could not log iris-test: {e}")
-        
-        # Log model for test-model
-        try:
-            with mlflow.start_run(run_name="test-model") as run:
-                mlflow.log_param("n_estimators", 10)
-                mlflow.log_metric("accuracy", accuracy)
-                
-                # Save model with proper MLflow structure
-                
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    model_dir = os.path.join(tmpdir, "model")
-                    os.makedirs(model_dir)
-                    
-                    # Save the pickled model
-                    model_path = os.path.join(model_dir, "model.pkl")
-                    with open(model_path, "wb") as f:
-                        pickle.dump(model, f)
-                    
-                    # Create MLmodel file
-                    mlmodel_content = {
-                        "artifact_path": "model",
-                        "flavors": {
-                            "python_function": {
-                                "model_path": "model.pkl",
-                                "loader_module": "mlflow.sklearn",
-                                "python_version": "3.13.3",
-                                "env": "conda.yaml"
-                            },
-                            "sklearn": {
-                                "pickled_model": "model.pkl",
-                                "serialization_format": "cloudpickle",
-                                "sklearn_version": "1.3.2"
-                            }
-                        },
-                        "model_uuid": run.info.run_id,
-                        "utc_time_created": "2025-01-01 00:00:00.000000"
-                    }
-                    
-                    with open(os.path.join(model_dir, "MLmodel"), "w") as f:
-                        yaml.dump(mlmodel_content, f)
-                    
-                    # Create minimal conda.yaml
-                    conda_content = {
-                        "name": "mlflow-env",
-                        "channels": ["defaults"],
-                        "dependencies": ["python=3.13", "pip", {"pip": ["scikit-learn==1.3.2", "mlflow"]}]
-                    }
-                    with open(os.path.join(model_dir, "conda.yaml"), "w") as f:
-                        yaml.dump(conda_content, f)
-                    
-                    # Log the entire model directory
-                    mlflow.log_artifacts(model_dir, "model")
-                
-                logged_models["test-model"] = f"runs:/{run.info.run_id}/model"
-                if verbose:
-                    print(f"✅ Model logged for test-model: runs:/{run.info.run_id}/model")
-        except Exception as e:
-            if verbose:
-                print(f"⚠️  Could not log test-model: {e}")
+
+        for model_name, run_name in [
+            ("iris-test", "iris-test-model"),
+            ("test-model", "test-model"),
+        ]:
+            uri = _log_model_to_mlflow(
+                model_name=model_name,
+                run_name=run_name,
+                model=model,
+                accuracy=accuracy,
+                python_full_version=python_full_version,
+                conda_python=conda_python,
+                verbose=verbose,
+            )
+            if uri:
+                logged_models[model_name] = uri
 
         # Check if at least one model was logged
         if len(logged_models) == 0:

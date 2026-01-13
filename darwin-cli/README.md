@@ -575,6 +575,8 @@ Discover and manage data assets, lineage, and quality rules.
 
 Orchestrate and manage ML workflows and pipelines.
 
+> 📖 **[Workflow YAML Reference](docs/workflow-yaml-reference.md)** - Complete documentation for workflow YAML structure including all fields, types, and examples.
+
 ### Workflow Operations
 
 | Command | Description | Example                                                                          |

@@ -168,7 +168,7 @@ if __name__ == "__main__":
             "compute_model": ["py.typed"],
             "darwin_workspace": ["py.typed"],
             "workspace_model": ["py.typed"],
-            "hermes": ["src/templates/*", "src/templates/**"],
+            "hermes": ["*", "**/*"],
             "darwin_fs": ["py.typed"],
             "darwin_catalog": ["py.typed"],
             "darwin_workflow": ["py.typed", "constant/*.conf"],

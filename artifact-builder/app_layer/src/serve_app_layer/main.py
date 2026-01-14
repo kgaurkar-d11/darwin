@@ -74,6 +74,7 @@ except RuntimeError:
 
 
 @app.get("/healthcheck")
+@app.get("/health")
 async def health_check():
     """
     Health check endpoint to ensure the service is running.

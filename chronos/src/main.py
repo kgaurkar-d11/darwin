@@ -29,10 +29,9 @@ router = APIRouter()
 
 
 @router.get("/healthcheck")
+@router.get("/health")
 async def healthcheck():
-    return {
-        "status": "ok"
-    }
+    return {"status": "SUCCESS", "message": "OK"}
 
 
 @router.get("/severities")

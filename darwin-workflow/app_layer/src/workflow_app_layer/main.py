@@ -185,19 +185,12 @@ async def startup():
 async def close():
     await wf_core.darwin_workflow_dao.close_tortoise()
 
-@app.get('/healthcheck', response_model=HealthCheckResponse,
-         responses={
-        200: {"description": "Service is healthy"},
-        500: {"description": "Internal Server Error"}
-    })
-def health_check() -> HealthCheckResponse:
+@app.get('/healthcheck')
+@app.get('/health')
+def health_check():
     try:
-        core, db = wf_core.health_check_core()
-        return HealthCheckResponse(
-            db=db,
-            app_layer="OK",
-            core=core
-        )
+        wf_core.health_check_core()
+        return {"status": "SUCCESS", "message": "OK"}
     except Exception as err:
         logger.error(err.__str__())
         return error_handler(err.__str__())

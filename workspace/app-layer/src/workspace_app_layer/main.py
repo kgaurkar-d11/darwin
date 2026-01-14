@@ -47,9 +47,10 @@ if not os.getenv("DEV"):
         app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
+@app.get("/healthcheck")
 @app.get("/health")
 def health():
-    return {"status": "Success"}
+    return {"status": "SUCCESS", "message": "OK"}
 
 
 @app.get("/get-projects")

@@ -33,7 +33,8 @@ compute = Compute(env=ENV)
 workspace = WorkspacesSDK(env=ENV)
 log_file_root = Config(env=ENV).log_file_root
 
-app = FastAPI()
+root_path = os.environ.get("ROOT_PATH", "")
+app = FastAPI(root_path=root_path)
 
 app.add_middleware(OpenTelemetryMiddleware)
 

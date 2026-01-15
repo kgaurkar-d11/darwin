@@ -60,7 +60,8 @@ async def lifespan(app: FastAPI):
 
 
 # --- Create app instance ---
-app = FastAPI(lifespan=lifespan)
+root_path = os.environ.get("ROOT_PATH", "")
+app = FastAPI(lifespan=lifespan, root_path=root_path)
 
 # --- Initialize MySQL client (non-async setup) ---
 db_client.init_db(app)

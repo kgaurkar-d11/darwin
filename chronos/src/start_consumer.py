@@ -19,7 +19,8 @@ from src.consumers.sqs_consumer_worker import SQSConsumerWorker
 from src.transformers.utils.register_utils import register_transformers
 
 
-app = FastAPI()
+root_path = environ.get("ROOT_PATH", "")
+app = FastAPI(root_path=root_path)
 otel_instrumentor(app=app)
 env = environ.get(ENV_ENVIRONMENT_VARIABLE, "local")
 db_client = MysqlClient()

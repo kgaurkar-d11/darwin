@@ -410,7 +410,6 @@ fi
 docker build \
     --platform "${PLATFORM}" \
     -t "${IMAGE_NAME}:${TAG}" \
-    --label "maintainer=darwin" \
     "${BUILD_CONTEXT}"
 
 log_info "Built image: ${IMAGE_NAME}:${TAG}"

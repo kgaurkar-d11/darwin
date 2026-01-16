@@ -1,9 +1,0 @@
-# Feature group update configuration
-# Used with: darwin feature-store feature-group update --name <fg_name> --version <version> --file
-owner: updated-owner@example.com
-tags:
-  - engagement
-  - production
-description: Updated production feature group
-state: ACTIVE
-

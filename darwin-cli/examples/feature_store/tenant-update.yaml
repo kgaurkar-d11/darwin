@@ -1,6 +1,0 @@
-# Tenant update configuration
-# Used with: darwin feature-store tenant update-all --file
-tenant_type: ALL
-current_tenant: old-tenant
-new_tenant: new-tenant
-

@@ -1,8 +1,0 @@
-# Tenant configuration for Feature Store
-# Used with: darwin feature-store tenant add --file
-feature_group_name: test_engagement_fg
-tenant_config:
-  read: team-ml-reader
-  write: team-ml-writer
-  consume: team-ml-consumer
-

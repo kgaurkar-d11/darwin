@@ -453,68 +453,33 @@ darwin mlflow run log \
 
 Manage entities, feature groups, and features for ML.
 
+> **Note**: Features read/write operations require properly configured backend service URLs.
+
 ### Entity Operations
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `feature-store entity create` | Create entity | `darwin feature-store entity create --file examples/feature_store/entity-config.yaml` |
-| `feature-store entity register` | Register entity | `darwin feature-store entity register --file examples/feature_store/entity-config.yaml` |
-| `feature-store entity get` | Get entity | `darwin feature-store entity get --name user_entity` |
-| `feature-store entity update` | Update entity | `darwin feature-store entity update --name user_entity --file examples/feature_store/entity-update.yaml` |
-| `feature-store entity get-metadata` | Get entity metadata | `darwin feature-store entity get-metadata --name user_entity` |
-| `feature-store entity list` | List all entities | `darwin feature-store entity list` |
-| `feature-store entity list-updated` | List updated entities | `darwin feature-store entity list-updated --offset 0` |
+| `feature-store entity create` | Create entity from YAML | `darwin feature-store entity create --file examples/feature_store/entity-config.yaml` |
+| `feature-store entity get` | Get entity by name | `darwin feature-store entity get --name user_entity` |
 
 ### Feature Group Operations
 
 | Command | Description | Example |
 |---------|-------------|---------|
 | `feature-store feature-group create` | Create feature group | `darwin feature-store feature-group create --file examples/feature_store/feature-group-config.yaml` |
-| `feature-store feature-group register` | Register feature group | `darwin feature-store feature-group register --file examples/feature_store/feature-group-config.yaml` |
+| `feature-store feature-group create --upgrade` | Create or upgrade FG version | `darwin feature-store feature-group create --file examples/feature_store/feature-group-config.yaml --upgrade` |
 | `feature-store feature-group get` | Get feature group | `darwin feature-store feature-group get --name user_features` |
-| `feature-store feature-group update` | Update feature group | `darwin feature-store feature-group update --name user_features --file examples/feature_store/feature-group-update.yaml` |
+| `feature-store feature-group get --version` | Get specific FG version | `darwin feature-store feature-group get --name user_features --version v1` |
 | `feature-store feature-group schema` | Get FG schema | `darwin feature-store feature-group schema --name user_features` |
-| `feature-store feature-group metadata` | Get FG metadata | `darwin feature-store feature-group metadata --name user_features` |
-| `feature-store feature-group version` | Get FG version | `darwin feature-store feature-group version --name user_features` |
-| `feature-store feature-group list` | List all FGs | `darwin feature-store feature-group list` |
-| `feature-store feature-group list-versions` | List FG versions | `darwin feature-store feature-group list-versions` |
-| `feature-store feature-group update-ttl` | Update TTL | `darwin feature-store feature-group update-ttl --name user_features --entity user_entity --ttl 86400` |
+| `feature-store feature-group version` | Get latest FG version | `darwin feature-store feature-group version --name user_features` |
+| `feature-store feature-group update-state` | Update FG state (LIVE/ARCHIVED) | `darwin feature-store feature-group update-state --name user_features --version v1 --state LIVE` |
 
-### Tenant Operations
+### Feature Read/Write Operations
 
 | Command | Description | Example |
 |---------|-------------|---------|
-| `feature-store tenant add` | Add tenant | `darwin feature-store tenant add --file examples/feature_store/tenant-config.yaml` |
-| `feature-store tenant get` | Get tenant | `darwin feature-store tenant get --fg-name user_features --entity-name user_entity` |
-| `feature-store tenant topic` | Get tenant topic | `darwin feature-store tenant topic --fg-name user_features --entity-name user_entity` |
-| `feature-store tenant list` | List all tenants | `darwin feature-store tenant list` |
-| `feature-store tenant feature-groups` | List FGs for tenant | `darwin feature-store tenant feature-groups --tenant-id 1` |
-| `feature-store tenant update-all` | Update all tenants | `darwin feature-store tenant update-all --file examples/feature_store/tenant-update.yaml` |
-
-### Feature Read/Write
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `feature-store features read` | Read features | `darwin feature-store features read --file examples/feature_store/read-features.yaml` |
-| `feature-store features multi-read` | Multi-read features | `darwin feature-store features multi-read --file examples/feature_store/multi-read-features.yaml` |
-| `feature-store features read-partition` | Read partition | `darwin feature-store features read-partition --file examples/feature_store/read-partition.yaml` |
-| `feature-store features write` | Write features (v2) | `darwin feature-store features write --file examples/feature_store/write-features.yaml` |
-
-### Run Data Operations
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `feature-store run-data add` | Add run data | `darwin feature-store run-data add --file examples/feature_store/run-data.yaml` |
-| `feature-store run-data get` | Get run data | `darwin feature-store run-data get --fg-name user_features --entity-name user_entity` |
-
-### Search Operations
-
-| Command | Description | Example |
-|---------|-------------|---------|
-| `feature-store search owners feature-group` | Search FG owners | `darwin feature-store search owners feature-group` |
-| `feature-store search owners entity` | Search entity owners | `darwin feature-store search owners entity` |
-| `feature-store search tags feature-group` | Search FG tags | `darwin feature-store search tags feature-group` |
-| `feature-store search tags entity` | Search entity tags | `darwin feature-store search tags entity` |
+| `feature-store features read` | Read features from FG | `darwin feature-store features read --file examples/feature_store/read-features.yaml` |
+| `feature-store features write` | Write features to FG | `darwin feature-store features write --file examples/feature_store/write-features.yaml` |
 
 ---
 

@@ -9,6 +9,8 @@ on:
       - 'setup.sh'
       - 'start.sh'
       - 'services.yaml'
+      - '.github/workflows/darwin-chronos-healthcheck.yml'
+
   workflow_dispatch:
 
 jobs:

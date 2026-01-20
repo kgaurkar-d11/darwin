@@ -604,26 +604,60 @@ if [ "$DARWIN_CLI_ENABLED" = "true" ]; then
   else
     VENV_PATH=".venv"
     
+    # Check if python3.9 exists and is version 3.9.7+
+    if command -v python3.9 &> /dev/null; then
+      if python3.9 -c "import sys; exit(0 if sys.version_info >= (3, 9, 7) else 1)" 2>/dev/null; then
+        PYTHON_CMD="python3.9"
+        echo "   ✅ Found Python 3.9.7+"
+      else
+        echo "   ❌ python3.9 found but version < 3.9.7"
+        echo "   Install: sudo apt-get install python3.9  # Ubuntu/Debian"
+        echo "            brew install python@3.9         # macOS"
+        DARWIN_CLI_ENABLED="false"
+      fi
+    else
+      echo "   ❌ python3.9 not found (darwin-cli requires Python 3.9.7+)"
+      echo "   Install: sudo apt-get install python3.9  # Ubuntu/Debian"
+      echo "            brew install python@3.9         # macOS"
+      DARWIN_CLI_ENABLED="false"
+    fi
+  fi
+  
+  if [ "$DARWIN_CLI_ENABLED" = "true" ]; then
+  
     # Create venv if it doesn't exist
     if [ ! -d "$VENV_PATH" ]; then
-      echo "   Creating virtual environment..."
-      python3.9 -m venv "$VENV_PATH"
+      echo "   Creating virtual environment with $PYTHON_CMD..."
+      $PYTHON_CMD -m venv "$VENV_PATH"
+      if [ $? -ne 0 ]; then
+        echo "   ❌ Failed to create virtual environment"
+        exit 1
+      fi
     fi
 
     # Install darwin-cli
     echo "   Installing darwin-cli package..."
     (
+      set -e
       source "$VENV_PATH/bin/activate" && \
       pip install --upgrade pip --quiet && \
       cd "$DARWIN_CLI_PATH" && \
+      rm -rf dist/ build/ *.egg-info && \
       python setup.py sdist && \
-      pip install dist/darwin-cli-1.0.0.tar.gz --force-reinstall --quiet
+      TARBALL=$(ls dist/*.tar.gz 2>/dev/null | head -1) && \
+      if [ -z "$TARBALL" ]; then
+        echo "   ❌ No tarball found in dist/"
+        exit 1
+      fi && \
+      pip install "$TARBALL" --force-reinstall --quiet
     )
 
     if [ $? -eq 0 ]; then
       echo "   ✅ darwin-cli installed successfully"
     else
       echo "   ❌ Failed to install darwin-cli"
+      echo "   Check the error above for details"
+      exit 1
     fi
   fi
 else

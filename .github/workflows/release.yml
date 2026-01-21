@@ -8,9 +8,6 @@ on:
       version:
         description: 'Version (e.g., 1.0.0)'
         required: true
-  pull_request:
-    branches: [main, develop]
-    types: [opened, synchronize, reopened]
 
 env:
   REGISTRY: docker.io
@@ -62,8 +59,6 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            VERSION="0.0.1"
           else
             VERSION="${{ github.event.inputs.version }}"
           fi
@@ -177,8 +172,6 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            VERSION="0.0.1"
           else
             VERSION="${{ github.event.inputs.version }}"
           fi
@@ -290,8 +283,6 @@ jobs:
           if [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
             VERSION="${VERSION#v}"
-          elif [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            VERSION="0.0.1"
           else
             VERSION="${{ github.event.inputs.version }}"
           fi
@@ -365,6 +356,7 @@ jobs:
         run: |
           if [[ "${{ github.event_name }}" == "release" ]]; then
             VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
           else
             VERSION="${{ github.event.inputs.version }}"
           fi
@@ -376,12 +368,21 @@ jobs:
           echo "## 🚀 Darwin Platform ${{ steps.version.outputs.version }} Release Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Combine all results
-          cat base-results.txt app-results.txt runtime-results.txt > all-results.txt 2>/dev/null || true
+          # Create empty all-results file if it doesn't exist
+          touch all-results.txt
           
-          # Count successes and failures
+          # Combine all results (files may not exist if jobs failed early)
+          cat base-results.txt 2>/dev/null >> all-results.txt || true
+          cat app-results.txt 2>/dev/null >> all-results.txt || true
+          cat runtime-results.txt 2>/dev/null >> all-results.txt || true
+          
+          # Count successes and failures with safer logic
           SUCCESS_COUNT=$(grep -c "✅" all-results.txt 2>/dev/null || echo "0")
           FAILURE_COUNT=$(grep -c "❌" all-results.txt 2>/dev/null || echo "0")
+          
+          # Ensure we have valid integers
+          SUCCESS_COUNT=${SUCCESS_COUNT:-0}
+          FAILURE_COUNT=${FAILURE_COUNT:-0}
           TOTAL_COUNT=$((SUCCESS_COUNT + FAILURE_COUNT))
           
           echo "**Build Results:** $SUCCESS_COUNT/$TOTAL_COUNT successful" >> $GITHUB_STEP_SUMMARY

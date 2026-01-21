@@ -576,6 +576,26 @@ curl -X POST http://localhost/iris-classifier/predict \
 
 > **📖 For more deployment options, see [hermes-cli/CLI.md](hermes-cli/CLI.md)**
 
+### 📚 Complete End-to-End Examples
+
+For comprehensive step-by-step guides covering the full ML lifecycle (training, deployment, and inference), see these examples:
+
+| Example | Framework | Task Type | Guide |
+|---------|-----------|-----------|-------|
+| **Iris Classification** | Spark + Sklearn | Multi-class Classification | [examples/iris-classification/README.md](examples/iris-classification/README.md) |
+| **Wine Classification** | Spark + LightGBM | Multi-class Classification | [examples/lightgbm-wine-classification/README.md](examples/lightgbm-wine-classification/README.md) |
+| **Diabetes Regression** | Spark + XGBoost | Regression | [examples/xgboost-diabetes-regression/README.md](examples/xgboost-diabetes-regression/README.md) |
+
+Each example demonstrates:
+- ✅ Platform setup and configuration
+- ✅ Compute cluster creation with Spark support
+- ✅ Hybrid approach: Spark for data processing + native frameworks for training
+- ✅ Model training in Jupyter notebooks
+- ✅ MLflow experiment tracking and model registration
+- ✅ Model deployment with `darwin-cli`
+- ✅ Real-time inference testing
+- ✅ Complete resource cleanup
+
 ### Quick Start: Use Feature Store
 
 ```python
@@ -822,6 +842,11 @@ If your `init_script` in the cluster configuration is too long, the cluster may 
 
 This guide walks you through your first end-to-end experience on Darwin — from compute creation to deployment.
 
+> **📖 Looking for complete step-by-step guides?** See our comprehensive examples:
+> - [Iris Classification (Spark + Sklearn)](examples/iris-classification/README.md)
+> - [Wine Classification (Spark + LightGBM)](examples/lightgbm-wine-classification/README.md)
+> - [Diabetes Regression (Spark + XGBoost)](examples/xgboost-diabetes-regression/README.md)
+
 ### 🔧 1) Create Compute
 
 Create a Ray cluster for your ML workload:
@@ -947,59 +972,31 @@ Once deployed, your model is accessible as a real-time inference API.
 
 ---
 
-### 🌸 Alternative Example: Iris Classification
+### 🔬 Additional ML Examples
 
-You can also try the Iris classification model as an alternative example:
+For more comprehensive examples with different ML frameworks and use cases:
 
-> **📖 Sample training script for iris classification: [examples/iris-classification/train_iris_model.ipynb](examples/iris-classification/train_iris_model.ipynb)**
+| Example | Framework | Dataset | Task | Complete Guide |
+|---------|-----------|---------|------|----------------|
+| **Iris Classification** | Spark + Sklearn | Iris (150 samples, 4 features) | Multi-class Classification | [📖 View Guide](examples/iris-classification/README.md) |
+| **Wine Classification** | Spark + LightGBM | Wine (178 samples, 13 features) | Multi-class Classification | [📖 View Guide](examples/lightgbm-wine-classification/README.md) |
+| **Diabetes Regression** | Spark + XGBoost | Diabetes (442 samples, 10 features) | Regression | [📖 View Guide](examples/xgboost-diabetes-regression/README.md) |
 
-**Deploy the Iris model:**
+**What's included in each example:**
+- ✅ Complete platform setup scripts (`init-example.sh`)
+- ✅ Training notebooks with Spark data processing
+- ✅ MLflow experiment tracking and model registration
+- ✅ Step-by-step deployment instructions
+- ✅ Sample inference requests with expected outputs
+- ✅ Troubleshooting guides
 
-```bash
-# Activate Hermes CLI
-source hermes-cli/.venv/bin/activate
+**Quick reference for training scripts:**
+- [Iris Training Notebook](examples/iris-classification/train_iris_model.ipynb) (Pure sklearn)
+- [Iris Spark Training Notebook](examples/iris-classification/train_iris_model_spark.ipynb) (Hybrid: Spark + Sklearn)
+- [Wine Training Notebook](examples/lightgbm-wine-classification/train_lightgbm_wine_spark.ipynb) (Hybrid: Spark + LightGBM)
+- [Diabetes Training Notebook](examples/xgboost-diabetes-regression/train_xgboost_diabetes_spark.ipynb) (Hybrid: Spark + XGBoost)
 
-# 1. Configure Hermes CLI with authentication token (one-time)
-export HERMES_USER_TOKEN=admin-token-default-change-in-production
-hermes configure
-
-# 2. Create environment
-hermes create-environment --name local --domain-suffix .local --cluster-name kind
-
-# 3. Create serve
-hermes create-serve \
-  --name iris-classifier \
-  --type api \
-  --space serve \
-  --description "Iris Species Classification model"
-
-# 4. Deploy model (one-click)
-hermes deploy-model \
-  --serve-name iris-classifier \
-  --model-uri mlflow-artifacts:/<experiment_id>/<run_id>/artifacts/model \
-  --cores 2 \
-  --memory 4 \
-  --node-capacity spot \
-  --min-replicas 1 \
-  --max-replicas 2
-```
-
-**Test the Iris model:**
-
-```bash
-curl -X POST http://localhost/iris-classifier/predict \
-  -H "Content-Type: application/json" \
-  -d '{
-    "features": {
-      "sepal_length": 5.1,
-      "sepal_width": 3.5,
-      "petal_length": 1.4,
-      "petal_width": 0.2
-    }
-  }'
-```
-
-> **📖 For detailed deployment commands, see [hermes-cli/CLI.md](hermes-cli/CLI.md)**
+> **💡 Tip**: All Spark-based examples use the hybrid approach - Spark for distributed data processing and native frameworks (sklearn, LightGBM, XGBoost) for model training. This ensures compatibility with any MLflow server version and eliminates Spark dependencies at serving time.
 
 ---
 

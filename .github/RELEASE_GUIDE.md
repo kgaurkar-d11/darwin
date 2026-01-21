@@ -1,8 +1,18 @@
 # Darwin Release Guide (Quick Start)
 
-## 🚀 Production Release Process
+## 🚀 Two Ways to Build Images
 
-Darwin uses a **single master release workflow** that builds all 15 images together when you create a GitHub Release.
+Darwin uses a **single master release workflow** that builds all 15 images together. There are two ways to trigger it:
+
+1. **Production Release** (via GitHub Release) - Recommended for official releases
+   - Triggered by creating a GitHub Release
+   - Tags images with version AND `:latest` tag
+   - Example: `darwinhq/darwin-catalog:1.0.0` + `darwinhq/darwin-catalog:latest`
+
+2. **Manual Testing Build** (via workflow dispatch) - For testing and RC versions
+   - Triggered manually from Actions tab or CLI
+   - Tags images with version ONLY (no `:latest` tag)
+   - Example: `darwinhq/darwin-catalog:1.0.0-rc1` (no latest tag)
 
 ### What Gets Built (15 Images)
 
@@ -29,7 +39,9 @@ Darwin uses a **single master release workflow** that builds all 15 images toget
 
 ---
 
-## Release in 2 Steps
+## Method 1: Production Release (Recommended)
+
+Build and publish official releases with `:latest` tags.
 
 ### Step 1: Merge Changes to Main
 
@@ -77,12 +89,61 @@ gh release create v1.0.0 --title "Darwin Platform v1.0.0" --notes "Release notes
 - ✅ Pushed to `darwinhq` organization on Docker Hub
 - ✅ Detailed summary shows which images succeeded/failed
 
+**Example Tags Created:**
+- Applications: `darwinhq/darwin-catalog:1.0.0` + `darwinhq/darwin-catalog:latest`
+- Base images: `darwinhq/python:3.9.7-pip-bookworm-slim-1.0.0` + `darwinhq/python:3.9.7-pip-bookworm-slim`
+- Runtimes: `darwinhq/ray:2.37.0-1.0.0` + `darwinhq/ray:2.37.0`
+
 ---
 
-## Release Summary Example
+## Method 2: Manual Testing Build
 
-After the workflow completes, you'll see:
+For testing, release candidates, or builds without updating `:latest` tags.
 
+**Via UI:**
+1. Go to **Actions** tab → **"🚀 Darwin Platform Release"**
+2. Click **"Run workflow"** dropdown
+3. Select **branch** (usually `main`)
+4. Enter **Version** (e.g., `1.0.0-rc1`, `2.0.0-beta.1`, `test-build-123`)
+5. Click **"Run workflow"** 🚀
+
+**Via CLI:**
+```bash
+# Run from main branch
+gh workflow run release.yml -f version=1.0.0-rc1
+
+# Run from a specific branch
+gh workflow run release.yml --ref feature-branch -f version=2.0.0-alpha
+
+# Watch the workflow
+gh run watch
+```
+
+**What Happens:**
+- ✅ All 15 images build in parallel
+- ✅ Each image tagged with your custom version ONLY (no `:latest` tag)
+- ✅ Pushed to `darwinhq` organization on Docker Hub
+- ✅ Detailed summary shows which images succeeded/failed
+
+**Example Tags Created:**
+- Applications: `darwinhq/darwin-catalog:1.0.0-rc1` (no latest tag)
+- Base images: `darwinhq/python:3.9.7-pip-bookworm-slim-1.0.0-rc1` (no default tag)
+- Runtimes: `darwinhq/ray:2.37.0-1.0.0-rc1` (no default tag)
+
+**When to Use Manual Builds:**
+- 🧪 Testing changes before official release
+- 🏗️ Building release candidates (RC)
+- 🐛 Creating bug fix test builds
+- 🔬 Experimenting with new features
+- 📦 Building from feature branches
+
+---
+
+## Build Summary Examples
+
+After either workflow completes, you'll see a detailed summary:
+
+### Production Release Summary
 ```
 ## 🚀 Darwin Platform v1.0.0 Release Summary
 
@@ -117,6 +178,24 @@ All 15 images have been pushed to darwinhq organization on Docker Hub.
 
 **Registry:** docker.io/darwinhq
 **Version:** v1.0.0
+**Tags:** Each image tagged with v1.0.0 + :latest
+```
+
+### Manual Testing Build Summary
+```
+## 🚀 Darwin Platform 1.0.0-rc1 Release Summary
+
+**Build Results:** 15/15 successful
+
+[... same image list ...]
+
+## 🎉 All Images Built Successfully!
+
+All 15 images have been pushed to darwinhq organization on Docker Hub.
+
+**Registry:** docker.io/darwinhq
+**Version:** 1.0.0-rc1
+**Tags:** Each image tagged with 1.0.0-rc1 only (no :latest)
 ```
 
 ---
@@ -171,45 +250,34 @@ gh run view <run-id> --log
 
 ## Verify Released Images
 
-Pull any released image:
+Pull images from either production releases or manual builds:
 
 ```bash
-# Applications with version
+# --- Production Release (with :latest tags) ---
+# Applications
 docker pull darwinhq/darwin-catalog:1.0.0
-docker pull darwinhq/darwin-workflow:1.0.0
-
-# Applications with latest
-docker pull darwinhq/darwin-catalog:latest
-docker pull darwinhq/ml-serve-app:latest
+docker pull darwinhq/darwin-catalog:latest  # ← Only available for releases
 
 # Base images
-docker pull darwinhq/python:3.9.7-pip-bookworm-slim
 docker pull darwinhq/python:3.9.7-pip-bookworm-slim-1.0.0
+docker pull darwinhq/python:3.9.7-pip-bookworm-slim  # ← Only available for releases
 
 # Runtimes
-docker pull darwinhq/ray:2.37.0
-docker pull darwinhq/ray:2.37.0-darwin-sdk
-docker pull darwinhq/serve-md-runtime:latest
+docker pull darwinhq/ray:2.37.0-1.0.0
+docker pull darwinhq/ray:2.37.0  # ← Only available for releases
+
+# --- Manual Testing Build (version only, no :latest) ---
+# Applications
+docker pull darwinhq/darwin-catalog:1.0.0-rc1
+docker pull darwinhq/darwin-workflow:2.0.0-beta.1
+
+# Base images
+docker pull darwinhq/python:3.9.7-pip-bookworm-slim-1.0.0-rc1
+
+# Runtimes
+docker pull darwinhq/ray:2.37.0-1.0.0-rc1
 ```
 
----
-
-## Manual Trigger (Testing)
-
-You can manually trigger a release without creating a GitHub Release:
-
-**Via UI:**
-1. **Actions** tab → **"🚀 Darwin Platform Release"**
-2. **Run workflow** → Select `main` branch
-3. **Version:** Enter test version (e.g., `1.0.0-rc1`)
-4. **Run workflow**
-
-**Via CLI:**
-```bash
-gh workflow run release.yml -f version=1.0.0-rc1
-```
-
----
 
 ## ⚙️ One-Time Setup
 
@@ -229,15 +297,24 @@ Get token: https://hub.docker.com/settings/security
 
 ## 🎯 Release Checklist
 
-Before creating a release:
+### For Production Releases:
 
 - [ ] All changes merged to `main` branch
 - [ ] Local tests passing
 - [ ] CI/CD tests passing
 - [ ] Version number decided (e.g., `v1.0.0`)
 - [ ] Release notes prepared (optional)
+- [ ] Ready to update `:latest` tags
 
 **Then:** Create GitHub Release and all images build automatically!
+
+### For Manual Testing Builds:
+
+- [ ] Branch to build from is ready
+- [ ] Version name decided (e.g., `1.0.0-rc1`, `test-build-123`)
+- [ ] Understand that `:latest` tags won't be updated
+
+**Then:** Manually trigger workflow from Actions tab or CLI!
 
 ---
 
@@ -262,18 +339,44 @@ All images use the same version (cohesive release).
 1. Check the workflow summary for failed images
 2. Click on the failed job to see error logs
 3. Fix the issue in code
-4. Create a new release to retry
+4. **For production:** Create a new release to retry
+5. **For testing:** Manually trigger workflow again with a new version
 
 ### Workflow not triggering
 
+**For production releases:**
 - Ensure you created a **Release**, not just a tag
 - Release must be **published**, not draft
 - Check that secrets are set correctly
+
+**For manual builds:**
+- Check that you're on the correct branch
+- Ensure secrets are available in the repository
+- Use `gh run watch` to monitor workflow start
 
 ### Base image errors
 
 If base images fail, dependent applications will also fail. Fix base images first, then re-run the release.
 
+### Wrong tags created
+
+**Problem:** `:latest` tags were updated when you didn't want them to be.
+**Solution:** Use **Method 2: Manual Testing Build** instead of creating a GitHub Release.
+
+**Problem:** `:latest` tags were NOT updated when you wanted them to be.
+**Solution:** Use **Method 1: Production Release** by creating a GitHub Release, not manual trigger.
+
 ---
 
-**That's it!** Create a GitHub Release and watch all 15 images build automatically. 🎉
+## Quick Reference
+
+| Goal | Method | Trigger | Tags Created |
+|------|--------|---------|--------------|
+| Official release | Production Release | Create GitHub Release | `version` + `:latest` |
+| Test/RC build | Manual Testing | Actions → Run workflow | `version` only |
+| Bug fix test | Manual Testing | CLI: `gh workflow run` | `version` only |
+| Feature branch test | Manual Testing | Specify branch in UI/CLI | `version` only |
+
+---
+
+**That's it!** Choose your method and watch all 15 images build automatically. 🎉

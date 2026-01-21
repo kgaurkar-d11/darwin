@@ -172,8 +172,8 @@ In Jupyter Lab:
 # Fix pyOpenSSL/cryptography compatibility issue first
 %pip install --upgrade pyOpenSSL cryptography
 
-# Install main dependencies
-%pip install pandas numpy scikit-learn mlflow pyspark
+# Install main dependencies (pin MLflow to match server version)
+%pip install pandas numpy scikit-learn mlflow==2.12.2 pyspark
 ```
 
 **Cell 2: Import Libraries**
@@ -413,7 +413,39 @@ darwin compute get --cluster-id $CLUSTER_ID
 
 ---
 
-## Step 9: Create ML-Serve Application
+## Step 9: Configure Serve Authentication
+
+Before using serve commands, configure your authentication token:
+
+```bash
+# Configure with default darwin-local token (recommended for local development)
+darwin serve configure
+```
+
+This will prompt you for a token. Use the default token for local development:
+```
+admin-token-default-change-in-production
+```
+
+---
+
+## Step 10: Create Serve Environment
+
+Create the serve environment if it doesn't exist:
+
+```bash
+darwin serve environment create \
+  --name darwin-local \
+  --domain-suffix .local \
+  --cluster-name kind \
+  --namespace serve
+```
+
+If the environment already exists, you'll see a message indicating it's already configured.
+
+---
+
+## Step 11: Create ML-Serve Application
 
 Create a new serve application for the model:
 
@@ -427,7 +459,7 @@ darwin serve create \
 
 ---
 
-## Step 10: Deploy the Model
+## Step 12: Deploy the Model
 
 Deploy the model using the MLflow model URI:
 
@@ -454,7 +486,7 @@ Wait until the status shows `RUNNING` (deployment status).
 
 ---
 
-## Step 11: Test Inference
+## Step 13: Test Inference
 
 Test the deployed model with sample requests:
 
@@ -511,7 +543,7 @@ curl -X POST http://localhost/serve/iris-spark-classifier/predict \
 
 ---
 
-## Step 12: Undeploy the Serve Application
+## Step 14: Undeploy the Serve Application
 
 When done, undeploy the serve application:
 
@@ -527,7 +559,7 @@ darwin serve status --name iris-spark-classifier --env darwin-local
 
 ---
 
-## Step 13: Cleanup (Optional)
+## Step 15: Cleanup (Optional)
 
 Delete the compute cluster:
 
@@ -551,10 +583,12 @@ In this example, you learned how to:
 | 6 | Train model | Run notebook cells (Spark data processing + sklearn training) |
 | 7 | Verify model | `darwin mlflow model get --name IrisSklearnRFClassifier` |
 | 8 | Stop cluster | `darwin compute stop --cluster-id $CLUSTER_ID` |
-| 9 | Create serve | `darwin serve create --name iris-spark-classifier ...` |
-| 10 | Deploy model | `darwin serve deploy-model ...` |
-| 11 | Test inference | `curl -X POST .../predict` |
-| 12 | Undeploy | `darwin serve undeploy-model ...` |
+| 9 | Configure serve auth | `darwin serve configure` |
+| 10 | Create environment | `darwin serve environment create ...` |
+| 11 | Create serve app | `darwin serve create --name iris-spark-classifier ...` |
+| 12 | Deploy model | `darwin serve deploy-model ...` |
+| 13 | Test inference | `curl -X POST .../predict` |
+| 14 | Undeploy | `darwin serve undeploy-model ...` |
 
 ---
 

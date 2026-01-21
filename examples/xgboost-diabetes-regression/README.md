@@ -145,26 +145,20 @@ Name: diabetes-xgboost-spark-example
 Status: PENDING
 ```
 
-Save the `CLUSTER_ID` for later steps:
-
-```bash
-export CLUSTER_ID=<your-cluster-id>
-```
-
-Wait for the cluster to be running:
+Wait for the cluster to be active:
 
 ```bash
 # Check cluster status
 darwin compute get --cluster-id $CLUSTER_ID
 ```
 
-Wait until `Status: RUNNING` appears.
+Wait until the cluster status shows `active`.
 
 ---
 
 ## Step 5: Access Jupyter Lab
 
-Once the cluster is running, access Jupyter Lab in your browser:
+Once the cluster is active, access Jupyter Lab in your browser:
 
 ```
 http://localhost/kind-0/{CLUSTER_ID}-jupyter/lab
@@ -188,7 +182,7 @@ In Jupyter Lab:
 %pip install --upgrade pyOpenSSL cryptography
 
 # Install main dependencies
-%pip install xgboost>=2.0.0 pandas numpy scikit-learn mlflow pyspark
+%pip install xgboost pandas numpy scikit-learn mlflow pyspark
 ```
 
 **Cell 2: Import Libraries**
@@ -260,7 +254,7 @@ MLFLOW_URI = "http://darwin-mlflow-lib.darwin.svc.cluster.local:8080"
 USERNAME = "abc@gmail.com"
 PASSWORD = "password"
 EXPERIMENT_NAME = "diabetes_xgboost_spark_regression"
-MODEL_NAME = "DiabetesXGBoostSparkRegressor"
+MODEL_NAME = "DiabetesXGBoostRegressor"
 
 os.environ["MLFLOW_TRACKING_USERNAME"] = USERNAME
 os.environ["MLFLOW_TRACKING_PASSWORD"] = PASSWORD
@@ -395,15 +389,15 @@ Back in your terminal, verify the model was registered:
 darwin mlflow model list
 
 # Get details of the diabetes model
-darwin mlflow model get --name DiabetesXGBoostSparkRegressor
+darwin mlflow model get --name DiabetesXGBoostRegressor
 
 # Get specific version details
-darwin mlflow model get --name DiabetesXGBoostSparkRegressor --version 1
+darwin mlflow model get --name DiabetesXGBoostRegressor --version 1
 ```
 
 Expected output:
 ```
-Model: DiabetesXGBoostSparkRegressor
+Model: DiabetesXGBoostRegressor
 Latest Version: 1
 Description: Diabetes XGBoost Regressor
 ```
@@ -440,55 +434,7 @@ darwin serve create \
 
 ---
 
-## Step 10: Configure Serve Infrastructure
-
-Create the infrastructure configuration for the serve:
-
-```bash
-darwin serve config create \
-  --serve-name diabetes-xgboost-regressor \
-  --env darwin-local \
-  --file examples/xgboost-diabetes-regression/serve-config.yaml
-```
-
-Or configure inline:
-
-```bash
-darwin serve config create \
-  --serve-name diabetes-xgboost-regressor \
-  --env darwin-local \
-  --backend-type fastapi \
-  --cores 2 \
-  --memory 4 \
-  --node-capacity ondemand \
-  --min-replicas 1 \
-  --max-replicas 3
-```
-
----
-
-## Step 11: Build Serve Artifact
-
-Build the deployment artifact:
-
-```bash
-darwin serve artifact create \
-  --serve-name diabetes-xgboost-regressor \
-  --version v1.0.0 \
-  --github-repo-url https://github.com/your-org/diabetes-serve-repo \
-  --branch main
-```
-
-Check build status:
-
-```bash
-darwin serve artifact jobs
-darwin serve artifact status --job-id <JOB_ID>
-```
-
----
-
-## Step 12: Deploy the Model
+## Step 10: Deploy the Model
 
 Deploy the model using the MLflow model URI:
 
@@ -496,7 +442,7 @@ Deploy the model using the MLflow model URI:
 darwin serve deploy-model \
   --serve-name diabetes-xgboost-regressor \
   --artifact-version v1.0.0 \
-  --model-uri models:/DiabetesXGBoostSparkRegressor/1 \
+  --model-uri models:/DiabetesXGBoostRegressor/1 \
   --env darwin-local \
   --cores 2 \
   --memory 4 \
@@ -511,11 +457,11 @@ Check deployment status:
 darwin serve status --name diabetes-xgboost-regressor --env darwin-local
 ```
 
-Wait until the status shows `RUNNING`.
+Wait until the status shows `RUNNING` (deployment status).
 
 ---
 
-## Step 13: Test Inference
+## Step 11: Test Inference
 
 Test the deployed model with sample requests:
 
@@ -602,7 +548,7 @@ curl -X POST http://localhost/serve/diabetes-xgboost-regressor/predict \
 
 ---
 
-## Step 14: Undeploy the Serve Application
+## Step 12: Undeploy the Serve Application
 
 When done, undeploy the serve application:
 
@@ -618,7 +564,7 @@ darwin serve status --name diabetes-xgboost-regressor --env darwin-local
 
 ---
 
-## Step 15: Cleanup (Optional)
+## Step 13: Cleanup (Optional)
 
 Delete the compute cluster:
 
@@ -639,15 +585,13 @@ In this example, you learned how to:
 | 3 | Configure CLI | `darwin config set --env darwin-local` |
 | 4 | Create cluster | `darwin compute create --file cluster-config.yaml` |
 | 5 | Access Jupyter | Browser: `http://localhost/kind-0/{cluster_id}-jupyter/lab` |
-| 6 | Train model | Run notebook cells |
-| 7 | Verify model | `darwin mlflow model get --name DiabetesXGBoostSparkRegressor` |
+| 6 | Train model | Run notebook cells (hybrid Spark + XGBoost) |
+| 7 | Verify model | `darwin mlflow model get --name DiabetesXGBoostRegressor` |
 | 8 | Stop cluster | `darwin compute stop --cluster-id $CLUSTER_ID` |
 | 9 | Create serve | `darwin serve create --name diabetes-xgboost-regressor ...` |
-| 10 | Configure serve | `darwin serve config create ...` |
-| 11 | Build artifact | `darwin serve artifact create ...` |
-| 12 | Deploy model | `darwin serve deploy-model ...` |
-| 13 | Test inference | `curl -X POST .../predict` |
-| 14 | Undeploy | `darwin serve undeploy-model ...` |
+| 10 | Deploy model | `darwin serve deploy-model ...` |
+| 11 | Test inference | `curl -X POST .../predict` |
+| 12 | Undeploy | `darwin serve undeploy-model ...` |
 
 ---
 
@@ -656,7 +600,8 @@ In this example, you learned how to:
 | Aspect | This Example (XGBoost Regression) | Iris/Wine (Classification) |
 |--------|-----------------------------------|---------------------------|
 | Task Type | Regression | Multi-class Classification |
-| Algorithm | SparkXGBRegressor | Random Forest / LightGBM |
+| Algorithm | Native XGBoost | Sklearn RF / LightGBM |
+| Training | Hybrid: Spark data prep + XGBoost | Hybrid: Spark data prep + Native |
 | Target | Continuous (disease progression) | Categorical (species/class) |
 | Metrics | RMSE, MAE, R2 | Accuracy, F1, Precision |
 | Output | Single numeric value | Class + probabilities |
@@ -738,8 +683,8 @@ kubectl rollout restart deployment -n ingress-nginx ingress-nginx-controller
 | File | Description |
 |------|-------------|
 | `README.md` | This guide |
-| `train_xgboost_diabetes_spark.ipynb` | Complete training notebook |
-| `train_xgboost_diabetes.ipynb` | Alternative non-Spark version |
+| `train_xgboost_diabetes_spark.ipynb` | Hybrid training notebook (Spark + XGBoost) |
+| `train_xgboost_diabetes.ipynb` | Alternative non-distributed version |
 | `init-example.sh` | Quick setup script |
 | `cluster-config.yaml` | Compute cluster configuration |
 | `serve-config.yaml` | ML-Serve infrastructure config |

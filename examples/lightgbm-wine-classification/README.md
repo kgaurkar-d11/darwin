@@ -1,16 +1,24 @@
-# Wine Classification with LightGBM on Spark - End-to-End ML Platform Example
+# Wine Classification - Spark Data Processing + LightGBM Training
 
-This example demonstrates the complete ML lifecycle on the Darwin platform using LightGBM with Spark data preparation for wine quality classification.
+This example demonstrates the complete ML lifecycle on the Darwin platform using a hybrid approach: **Spark for data processing** and **native LightGBM for model training**.
 
 ## Overview
 
 You will learn how to:
 1. Set up the Darwin ML platform with required services
 2. Create and manage a compute cluster with Spark support
-3. Train a LightGBM model with distributed Spark data preparation
-4. Track experiments and register models with MLflow
-5. Deploy models for inference using ML-Serve
-6. Test inference endpoints and clean up resources
+3. Use Spark for distributed data processing (ETL, splitting)
+4. Train a LightGBM model using native LightGBM
+5. Track experiments and register models with MLflow
+6. Deploy models for inference using ML-Serve
+7. Test inference endpoints and clean up resources
+
+## Why This Approach?
+
+- **Spark**: Handles data processing and can scale to large datasets
+- **Native LightGBM**: Efficient gradient boosting on the driver node
+- **MLflow lightgbm flavor**: Reliable model logging and versioning
+- **Fast serving**: No Spark/Java dependencies needed at inference time
 
 ## Architecture
 
@@ -150,22 +158,18 @@ Save the `CLUSTER_ID` for later steps:
 
 ```bash
 export CLUSTER_ID=<your-cluster-id>
-```
 
-Wait for the cluster to be running:
-
-```bash
-# Check cluster status
+# Wait for cluster to be active (this may take a few minutes)
 darwin compute get --cluster-id $CLUSTER_ID
 ```
 
-Wait until `Status: RUNNING` appears.
+Wait until the cluster status shows `active`.
 
 ---
 
 ## Step 5: Access Jupyter Lab
 
-Once the cluster is running, access Jupyter Lab in your browser:
+Once the cluster is active, access Jupyter Lab in your browser:
 
 ```
 http://localhost/kind-0/{CLUSTER_ID}-jupyter/lab
@@ -438,55 +442,7 @@ darwin serve create \
 
 ---
 
-## Step 10: Configure Serve Infrastructure
-
-Create the infrastructure configuration for the serve:
-
-```bash
-darwin serve config create \
-  --serve-name wine-lightgbm-classifier \
-  --env darwin-local \
-  --file examples/lightgbm-wine-classification/serve-config.yaml
-```
-
-Or configure inline:
-
-```bash
-darwin serve config create \
-  --serve-name wine-lightgbm-classifier \
-  --env darwin-local \
-  --backend-type fastapi \
-  --cores 2 \
-  --memory 4 \
-  --node-capacity ondemand \
-  --min-replicas 1 \
-  --max-replicas 3
-```
-
----
-
-## Step 11: Build Serve Artifact
-
-Build the deployment artifact:
-
-```bash
-darwin serve artifact create \
-  --serve-name wine-lightgbm-classifier \
-  --version v1.0.0 \
-  --github-repo-url https://github.com/your-org/wine-serve-repo \
-  --branch main
-```
-
-Check build status:
-
-```bash
-darwin serve artifact jobs
-darwin serve artifact status --job-id <JOB_ID>
-```
-
----
-
-## Step 12: Deploy the Model
+## Step 10: Deploy the Model
 
 Deploy the model using the MLflow model URI:
 
@@ -494,7 +450,7 @@ Deploy the model using the MLflow model URI:
 darwin serve deploy-model \
   --serve-name wine-lightgbm-classifier \
   --artifact-version v1.0.0 \
-  --model-uri models:/WineLightGBMSparkClassifier/1 \
+  --model-uri models:/WineLightGBMClassifier/1 \
   --env darwin-local \
   --cores 2 \
   --memory 4 \
@@ -509,11 +465,11 @@ Check deployment status:
 darwin serve status --name wine-lightgbm-classifier --env darwin-local
 ```
 
-Wait until the status shows `RUNNING`.
+Wait until the status shows `RUNNING` (deployment status).
 
 ---
 
-## Step 13: Test Inference
+## Step 11: Test Inference
 
 Test the deployed model with sample requests:
 
@@ -610,7 +566,7 @@ curl -X POST http://localhost/serve/wine-lightgbm-classifier/predict \
 
 ---
 
-## Step 14: Undeploy the Serve Application
+## Step 12: Undeploy the Serve Application
 
 When done, undeploy the serve application:
 
@@ -626,7 +582,7 @@ darwin serve status --name wine-lightgbm-classifier --env darwin-local
 
 ---
 
-## Step 15: Cleanup (Optional)
+## Step 13: Cleanup (Optional)
 
 Delete the compute cluster:
 
@@ -647,27 +603,25 @@ In this example, you learned how to:
 | 3 | Configure CLI | `darwin config set --env darwin-local` |
 | 4 | Create cluster | `darwin compute create --file cluster-config.yaml` |
 | 5 | Access Jupyter | Browser: `http://localhost/kind-0/{cluster_id}-jupyter/lab` |
-| 6 | Train model | Run notebook cells |
-| 7 | Verify model | `darwin mlflow model get --name WineLightGBMSparkClassifier` |
+| 6 | Train model | Run notebook cells (hybrid Spark + LightGBM) |
+| 7 | Verify model | `darwin mlflow model get --name WineLightGBMClassifier` |
 | 8 | Stop cluster | `darwin compute stop --cluster-id $CLUSTER_ID` |
 | 9 | Create serve | `darwin serve create --name wine-lightgbm-classifier ...` |
-| 10 | Configure serve | `darwin serve config create ...` |
-| 11 | Build artifact | `darwin serve artifact create ...` |
-| 12 | Deploy model | `darwin serve deploy-model ...` |
-| 13 | Test inference | `curl -X POST .../predict` |
-| 14 | Undeploy | `darwin serve undeploy-model ...` |
+| 10 | Deploy model | `darwin serve deploy-model ...` |
+| 11 | Test inference | `curl -X POST .../predict` |
+| 12 | Undeploy | `darwin serve undeploy-model ...` |
 
 ---
 
 ## Comparison: LightGBM vs Random Forest (Iris Example)
 
-| Aspect | This Example (LightGBM Wine) | Iris Example (Spark RF) |
+| Aspect | This Example (LightGBM Wine) | Iris Example (Sklearn RF) |
 |--------|------------------------------|-------------------------|
-| Algorithm | LightGBM (Gradient Boosting) | PySpark Random Forest |
-| Training | Native LightGBM on driver | Distributed Spark ML |
+| Algorithm | LightGBM (Gradient Boosting) | Sklearn Random Forest |
+| Training | Hybrid: Spark data prep + LightGBM | Hybrid: Spark data prep + Sklearn |
 | Data Prep | Spark DataFrames | Spark DataFrames |
 | Dataset | Wine (178 samples, 13 features) | Iris (150 samples, 4 features) |
-| Use Case | Medium datasets, high accuracy | Large datasets, distributed |
+| Use Case | Medium datasets, high accuracy | Medium datasets, classification |
 
 ---
 
@@ -726,8 +680,8 @@ kubectl rollout restart deployment -n ingress-nginx ingress-nginx-controller
 | File | Description |
 |------|-------------|
 | `README.md` | This guide |
-| `train_lightgbm_wine_spark.ipynb` | Complete training notebook |
-| `train_lightgbm_wine.ipynb` | Alternative non-Spark version |
+| `train_lightgbm_wine_spark.ipynb` | Hybrid training notebook (Spark + LightGBM) |
+| `train_lightgbm_wine.ipynb` | Alternative non-distributed version |
 | `init-example.sh` | Quick setup script |
 | `cluster-config.yaml` | Compute cluster configuration |
 | `serve-config.yaml` | ML-Serve infrastructure config |
